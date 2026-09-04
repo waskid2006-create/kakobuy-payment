@@ -433,7 +433,6 @@ button {
   font-size: 12px;
   font-weight: 700;
 }
-
-.admin-footer span {
-  color: var(--red);
+  .admin-footer span {
+    color: var(--red);
 }
