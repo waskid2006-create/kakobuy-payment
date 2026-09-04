@@ -12,8 +12,8 @@ const methods = [
 export default function AdminPage() {
   const [selected, setSelected] = useState("bitcoin")
   const [information, setInformation] = useState("")
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState("")
+  const [qrPreview, setQrPreview] = useState("")
+  const [qrFile, setQrFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -22,8 +22,8 @@ export default function AdminPage() {
   useEffect(() => {
     async function loadInformation() {
       setLoading(true)
-      setSelectedFile(null)
-      setPreview("")
+      setQrPreview("")
+      setQrFile(null)
 
       try {
         const response = await fetch(
@@ -38,7 +38,7 @@ export default function AdminPage() {
         )
 
         if (data.qr_image_url) {
-          setPreview(data.qr_image_url)
+          setQrPreview(data.qr_image_url)
         }
       } catch {
         setInformation(
@@ -52,42 +52,77 @@ export default function AdminPage() {
     loadInformation()
   }, [selected])
 
-  function handleFileChange(
+  function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
     const file = event.target.files?.[0]
 
     if (!file) return
 
-    setSelectedFile(file)
+    setQrFile(file)
 
-    const imageUrl = URL.createObjectURL(file)
-    setPreview(imageUrl)
+    const previewUrl = URL.createObjectURL(file)
+    setQrPreview(previewUrl)
   }
 
   async function saveChanges() {
     try {
-      const response = await fetch("/api/payment-methods", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: selected,
-          information,
-        }),
-      })
+      let qrImageUrl = qrPreview
 
-      if (!response.ok) {
-        throw new Error("Failed to save")
+      /*
+       * If an image was selected, upload it through the API.
+       */
+      if (qrFile) {
+        const formData = new FormData()
+        formData.append("id", selected)
+        formData.append("information", information)
+        formData.append("qr", qrFile)
+
+        const uploadResponse = await fetch(
+          "/api/payment-methods",
+          {
+            method: "PUT",
+            body: formData,
+          }
+        )
+
+        if (!uploadResponse.ok) {
+          throw new Error("Failed to save")
+        }
+
+        const data = await uploadResponse.json()
+
+        qrImageUrl = data.qr_image_url || qrPreview
+      } else {
+        const response = await fetch(
+          "/api/payment-methods",
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              id: selected,
+              information,
+              qr_image_url: qrImageUrl,
+            }),
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error("Failed to save")
+        }
       }
 
+      setQrPreview(qrImageUrl)
+      setQrFile(null)
       setSaved(true)
 
       setTimeout(() => {
         setSaved(false)
       }, 2000)
-    } catch {
+    } catch (error) {
+      console.error(error)
       alert("Unable to save changes.")
     }
   }
@@ -163,36 +198,58 @@ export default function AdminPage() {
 
           <div className="upload-box">
 
-            {preview ? (
-              <div>
-                <img
-                  src={preview}
-                  alt="Selected QR preview"
-                  style={{
-                    width: "220px",
-                    maxWidth: "100%",
-                    borderRadius: "12px",
-                    marginBottom: "15px",
-                  }}
-                />
-
-                <p>Image selected</p>
-              </div>
-            ) : (
-              <>
-                <div className="qr-icon">▦</div>
-                <p>Choose QR image</p>
-                <span>PNG, JPG or WEBP</span>
-              </>
-            )}
-
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              onChange={handleFileChange}
+              onChange={handleQrChange}
+              disabled={loading}
             />
 
+            <p>Choose QR image</p>
+
+            <span>
+              PNG, JPG or WEBP
+            </span>
+
           </div>
+
+          {qrPreview && (
+            <div
+              style={{
+                marginTop: "15px",
+                padding: "15px",
+                background: "#181818",
+                borderRadius: "13px",
+                textAlign: "center",
+              }}
+            >
+              <p
+                style={{
+                  margin: "0 0 10px",
+                  color: "#999",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                }}
+              >
+                QR PREVIEW
+              </p>
+
+              <img
+                src={qrPreview}
+                alt={`${current?.name} QR Code`}
+                style={{
+                  display: "block",
+                  width: "220px",
+                  height: "220px",
+                  maxWidth: "100%",
+                  objectFit: "contain",
+                  margin: "0 auto",
+                  background: "#fff",
+                  borderRadius: "10px",
+                }}
+              />
+            </div>
+          )}
 
           <button
             onClick={saveChanges}
