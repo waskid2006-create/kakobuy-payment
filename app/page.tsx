@@ -13,7 +13,9 @@ export default function Home() {
   const [selected, setSelected] = useState("bitcoin")
   const [copied, setCopied] = useState(false)
 
-  const selectedMethod = paymentMethods.find((item) => item.id === selected)
+  const selectedMethod = paymentMethods.find(
+    (item) => item.id === selected
+  )
 
   function copyInfo() {
     navigator.clipboard.writeText("PAYMENT INFORMATION")
@@ -25,64 +27,50 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 py-8 text-white">
-      <div className="mx-auto max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-black tracking-tight">KAKOBUY</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            Select your payment method
-          </p>
-        </div>
+    <main className="page">
+      <div className="container">
+        <header className="header">
+          <h1>KAKOBUY</h1>
+          <p>Select your payment method</p>
+        </header>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="methods">
           {paymentMethods.map((method) => (
             <button
               key={method.id}
               onClick={() => setSelected(method.id)}
-              className={`rounded-2xl border p-4 text-left transition ${
-                selected === method.id
-                  ? "border-white bg-white text-black"
-                  : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
+              className={`method ${
+                selected === method.id ? "selected" : ""
               }`}
             >
-              <div className="text-2xl font-black">{method.symbol}</div>
-              <div className="mt-2 text-sm font-bold">{method.name}</div>
+              <span className="symbol">{method.symbol}</span>
+              <span className="name">{method.name}</span>
             </button>
           ))}
         </div>
 
-        <section className="mt-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="text-xl font-bold">{selectedMethod?.name}</h2>
+        <section className="payment-card">
+          <h2>{selectedMethod?.name}</h2>
 
-          <div className="mt-5 rounded-xl bg-zinc-900 p-4">
-            <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-              Payment information
-            </p>
-
-            <p className="break-all text-sm text-zinc-300">
+          <div className="info-box">
+            <p className="label">Payment information</p>
+            <p className="info">
               Payment information will appear here.
             </p>
           </div>
 
-          <button
-            onClick={copyInfo}
-            className="mt-4 w-full rounded-xl bg-white py-3 font-bold text-black transition hover:bg-zinc-200"
-          >
+          <button className="copy-button" onClick={copyInfo}>
             {copied ? "✓ Copy successful" : "Copy information"}
           </button>
 
-          <div className="mt-5 rounded-xl border border-dashed border-zinc-700 p-8 text-center">
-            <p className="text-sm text-zinc-500">QR code</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              QR image will appear here
-            </p>
+          <div className="qr-box">
+            <p>QR code</p>
+            <span>QR image will appear here</span>
           </div>
         </section>
 
-        <p className="mt-6 text-center text-xs text-zinc-600">
-          Kakobuy
-        </p>
+        <p className="footer">Kakobuy</p>
       </div>
     </main>
   )
-  }
+}
