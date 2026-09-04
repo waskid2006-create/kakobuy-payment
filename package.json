@@ -12,5 +12,10 @@
     "react": "^19",
     "react-dom": "^19",
     "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^19"
   }
 }
