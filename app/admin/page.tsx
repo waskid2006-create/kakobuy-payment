@@ -16,34 +16,42 @@ export default function AdminPage() {
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   const current = methods.find((item) => item.id === selected)
 
   useEffect(() => {
     async function loadInformation() {
       setLoading(true)
+      setSaved(false)
       setQrPreview("")
       setQrFile(null)
 
       try {
         const response = await fetch(
-          `/api/payment-methods?id=${selected}`
+          `/api/payment-methods?id=${selected}`,
+          {
+            cache: "no-store",
+          }
         )
 
         const data = await response.json()
 
-        setInformation(
-          data.information ||
-            "Payment information will appear here."
-        )
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load payment method"
+          )
+        }
+
+        setInformation(data.information || "")
 
         if (data.qr_image_url) {
           setQrPreview(data.qr_image_url)
         }
-      } catch {
-        setInformation(
-          "Payment information will appear here."
-        )
+      } catch (error) {
+        console.error("Load error:", error)
+
+        setInformation("")
       } finally {
         setLoading(false)
       }
@@ -59,71 +67,86 @@ export default function AdminPage() {
 
     if (!file) return
 
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("QR image must be smaller than 5 MB.")
+      return
+    }
+
     setQrFile(file)
 
     const previewUrl = URL.createObjectURL(file)
     setQrPreview(previewUrl)
+    setSaved(false)
   }
 
   async function saveChanges() {
+    if (saving) return
+
+    setSaving(true)
+    setSaved(false)
+
     try {
-      let qrImageUrl = qrPreview
+      const formData = new FormData()
 
-      /*
-       * If an image was selected, upload it through the API.
-       */
+      formData.append("id", selected)
+      formData.append("information", information)
+
       if (qrFile) {
-        const formData = new FormData()
-        formData.append("id", selected)
-        formData.append("information", information)
         formData.append("qr", qrFile)
+      }
 
-        const uploadResponse = await fetch(
-          "/api/payment-methods",
-          {
-            method: "PUT",
-            body: formData,
-          }
-        )
-
-        if (!uploadResponse.ok) {
-          throw new Error("Failed to save")
+      const response = await fetch(
+        "/api/payment-methods",
+        {
+          method: "PUT",
+          body: formData,
         }
+      )
 
-        const data = await uploadResponse.json()
+      const text = await response.text()
 
-        qrImageUrl = data.qr_image_url || qrPreview
-      } else {
-        const response = await fetch(
-          "/api/payment-methods",
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              id: selected,
-              information,
-              qr_image_url: qrImageUrl,
-            }),
-          }
-        )
+      let data: any = {}
 
-        if (!response.ok) {
-          throw new Error("Failed to save")
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = {
+          error: text || "Server returned an invalid response",
         }
       }
 
-      setQrPreview(qrImageUrl)
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            `Save failed with status ${response.status}`
+        )
+      }
+
+      if (data.qr_image_url) {
+        setQrPreview(data.qr_image_url)
+      }
+
       setQrFile(null)
       setSaved(true)
 
       setTimeout(() => {
         setSaved(false)
-      }, 2000)
+      }, 3000)
     } catch (error) {
-      console.error(error)
-      alert("Unable to save changes.")
+      console.error("Save error:", error)
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to save changes."
+      )
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -161,6 +184,7 @@ export default function AdminPage() {
                     ? "admin-selected"
                     : ""
                 }`}
+                type="button"
               >
                 <strong>{method.symbol}</strong>
                 <span>{method.name}</span>
@@ -189,7 +213,7 @@ export default function AdminPage() {
             }
             className="admin-textarea"
             placeholder="Enter payment information"
-            disabled={loading}
+            disabled={loading || saving}
           />
 
           <label className="field-label">
@@ -202,7 +226,7 @@ export default function AdminPage() {
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={handleQrChange}
-              disabled={loading}
+              disabled={loading || saving}
             />
 
             <p>Choose QR image</p>
@@ -254,11 +278,14 @@ export default function AdminPage() {
           <button
             onClick={saveChanges}
             className="save-button"
-            disabled={loading}
+            disabled={loading || saving}
+            type="button"
           >
-            {saved
-              ? "✓ Saved successfully"
-              : "Save changes"}
+            {saving
+              ? "Saving..."
+              : saved
+                ? "✓ Saved successfully"
+                : "Save changes"}
           </button>
 
         </section>
