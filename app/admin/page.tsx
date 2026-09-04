@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 const methods = [
   { id: "bitcoin", name: "Bitcoin", symbol: "₿" },
@@ -11,19 +11,64 @@ const methods = [
 
 export default function AdminPage() {
   const [selected, setSelected] = useState("bitcoin")
-  const [information, setInformation] = useState(
-    "Payment information will appear here."
-  )
+  const [information, setInformation] = useState("")
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const current = methods.find((item) => item.id === selected)
 
-  function saveChanges() {
-    setSaved(true)
+  useEffect(() => {
+    async function loadInformation() {
+      setLoading(true)
 
-    setTimeout(() => {
-      setSaved(false)
-    }, 2000)
+      try {
+        const response = await fetch(
+          `/api/payment-methods?id=${selected}`
+        )
+
+        const data = await response.json()
+
+        setInformation(
+          data.information ||
+            "Payment information will appear here."
+        )
+      } catch {
+        setInformation(
+          "Payment information will appear here."
+        )
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadInformation()
+  }, [selected])
+
+  async function saveChanges() {
+    try {
+      const response = await fetch("/api/payment-methods", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: selected,
+          information,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to save")
+      }
+
+      setSaved(true)
+
+      setTimeout(() => {
+        setSaved(false)
+      }, 2000)
+    } catch {
+      alert("Unable to save changes.")
+    }
   }
 
   return (
@@ -45,6 +90,7 @@ export default function AdminPage() {
 
         <section className="admin-card">
           <h2>Payment Methods</h2>
+
           <p className="admin-description">
             Select a method to edit its payment information.
           </p>
@@ -55,7 +101,9 @@ export default function AdminPage() {
                 key={method.id}
                 onClick={() => setSelected(method.id)}
                 className={`admin-method ${
-                  selected === method.id ? "admin-selected" : ""
+                  selected === method.id
+                    ? "admin-selected"
+                    : ""
                 }`}
               >
                 <strong>{method.symbol}</strong>
@@ -79,9 +127,12 @@ export default function AdminPage() {
 
           <textarea
             value={information}
-            onChange={(event) => setInformation(event.target.value)}
+            onChange={(event) =>
+              setInformation(event.target.value)
+            }
             className="admin-textarea"
             placeholder="Enter payment information"
+            disabled={loading}
           />
 
           <label className="field-label">
@@ -97,8 +148,11 @@ export default function AdminPage() {
           <button
             onClick={saveChanges}
             className="save-button"
+            disabled={loading}
           >
-            {saved ? "✓ Saved successfully" : "Save changes"}
+            {saved
+              ? "✓ Saved successfully"
+              : "Save changes"}
           </button>
         </section>
 
@@ -109,4 +163,4 @@ export default function AdminPage() {
       </div>
     </main>
   )
-          }
+}
