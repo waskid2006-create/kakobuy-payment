@@ -1,48 +1,58 @@
 import { sql } from "@/app/db"
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const id = searchParams.get("id")
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
 
-  if (!id) {
+    if (!id) {
+      return Response.json(
+        { error: "Missing payment method" },
+        { status: 400 }
+      )
+    }
+
+    const result = await sql`
+      SELECT id, name, information, qr_image_url
+      FROM payment_methods
+      WHERE id = ${id}
+      LIMIT 1
+    `
+
+    if (result.length === 0) {
+      return Response.json(
+        { error: "Payment method not found" },
+        { status: 404 }
+      )
+    }
+
+    return Response.json(result[0])
+  } catch (error) {
+    console.error("Payment method GET error:", error)
+
     return Response.json(
-      { error: "Missing payment method" },
-      { status: 400 }
+      { error: "Unable to load payment method" },
+      { status: 500 }
     )
   }
-
-  const result = await sql`
-    SELECT id, name, information, qr_image_url
-    FROM payment_methods
-    WHERE id = ${id}
-    LIMIT 1
-  `
-
-  if (result.length === 0) {
-    return Response.json(
-      { error: "Payment method not found" },
-      { status: 404 }
-    )
-  }
-
-  return Response.json(result[0])
 }
 
 export async function PUT(request: Request) {
   try {
     const contentType = request.headers.get("content-type") || ""
 
-    /*
-     * IMAGE UPLOAD
-     */
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData()
 
       const id = formData.get("id")?.toString()
+
       const information =
         formData.get("information")?.toString() || ""
 
-      const qr = formData.get("qr")
+      // Accept either field name
+      const qr =
+        formData.get("qr") ||
+        formData.get("qr_image")
 
       if (!id) {
         return Response.json(
@@ -51,9 +61,9 @@ export async function PUT(request: Request) {
         )
       }
 
-      let qrImageUrl = ""
+      let qrImageUrl: string | null = null
 
-      if (qr instanceof File) {
+      if (qr instanceof File && qr.size > 0) {
         if (!qr.type.startsWith("image/")) {
           return Response.json(
             { error: "QR file must be an image" },
@@ -61,9 +71,6 @@ export async function PUT(request: Request) {
           )
         }
 
-        /*
-         * Limit QR images to 5 MB.
-         */
         if (qr.size > 5 * 1024 * 1024) {
           return Response.json(
             { error: "QR image must be smaller than 5 MB" },
@@ -80,13 +87,22 @@ export async function PUT(request: Request) {
           buffer.toString("base64")
       }
 
-      await sql`
-        UPDATE payment_methods
-        SET
-          information = ${information},
-          qr_image_url = ${qrImageUrl}
-        WHERE id = ${id}
-      `
+      if (qrImageUrl) {
+        await sql`
+          UPDATE payment_methods
+          SET
+            information = ${information},
+            qr_image_url = ${qrImageUrl}
+          WHERE id = ${id}
+        `
+      } else {
+        await sql`
+          UPDATE payment_methods
+          SET
+            information = ${information}
+          WHERE id = ${id}
+        `
+      }
 
       return Response.json({
         success: true,
@@ -94,16 +110,11 @@ export async function PUT(request: Request) {
       })
     }
 
-    /*
-     * NORMAL JSON UPDATE
-     */
     const body = await request.json()
 
-    const {
-      id,
-      information,
-      qr_image_url,
-    } = body
+    const id = body.id
+    const information = body.information || ""
+    const qrImageUrl = body.qr_image_url || ""
 
     if (!id) {
       return Response.json(
@@ -115,21 +126,24 @@ export async function PUT(request: Request) {
     await sql`
       UPDATE payment_methods
       SET
-        information = ${information || ""},
-        qr_image_url = ${qr_image_url || ""}
+        information = ${information},
+        qr_image_url = ${qrImageUrl}
       WHERE id = ${id}
     `
 
     return Response.json({
       success: true,
-      qr_image_url: qr_image_url || "",
+      qr_image_url: qrImageUrl,
     })
   } catch (error) {
     console.error("Payment method update error:", error)
 
     return Response.json(
       {
-        error: "Unable to save payment method",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to save payment method",
       },
       { status: 500 }
     )
