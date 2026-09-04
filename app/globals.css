@@ -1,6 +1,10 @@
 :root {
-  --background: #000000;
-  --foreground: #ffffff;
+  --red: #ff2020;
+  --black: #050505;
+  --card: #0d0d0d;
+  --border: #252525;
+  --white: #ffffff;
+  --gray: #999999;
 }
 
 * {
@@ -13,8 +17,8 @@ html {
 
 body {
   margin: 0;
-  background: #000000;
-  color: #ffffff;
+  background: var(--black);
+  color: var(--white);
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -25,8 +29,9 @@ button {
 
 .page {
   min-height: 100vh;
-  padding: 32px 16px;
-  background: #000000;
+  padding: 35px 16px;
+  background:
+    radial-gradient(circle at top, #220000 0%, #050505 35%, #000 70%);
 }
 
 .container {
@@ -37,19 +42,27 @@ button {
 
 .header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 30px;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 32px;
-  font-weight: 900;
-  letter-spacing: -1px;
+  font-size: 42px;
+  font-weight: 950;
+  letter-spacing: -2px;
+}
+
+.kako {
+  color: var(--red);
+}
+
+.buy {
+  color: var(--white);
 }
 
 .header p {
-  margin: 8px 0 0;
-  color: #999999;
+  margin: 9px 0 0;
+  color: var(--gray);
   font-size: 14px;
 }
 
@@ -60,111 +73,179 @@ button {
 }
 
 .method {
-  padding: 16px;
+  min-height: 105px;
+  padding: 17px;
   text-align: left;
   color: white;
-  background: #090909;
-  border: 1px solid #292929;
-  border-radius: 16px;
-  transition: 0.2s;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  transition: 0.2s ease;
 }
 
 .method:hover {
-  border-color: #666666;
+  border-color: #555;
+  transform: translateY(-2px);
 }
 
 .method.selected {
-  background: white;
-  color: black;
-  border-color: white;
+  color: white;
+  background: #180000;
+  border: 1px solid var(--red);
+  box-shadow: 0 0 20px rgba(255, 32, 32, 0.12);
 }
 
 .symbol {
   display: block;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 900;
 }
 
 .name {
   display: block;
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 14px;
   font-weight: 700;
 }
 
 .payment-card {
-  margin-top: 20px;
+  margin-top: 18px;
   padding: 20px;
-  background: #090909;
-  border: 1px solid #292929;
-  border-radius: 16px;
+  background: rgba(13, 13, 13, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.small-title {
+  color: #666;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
 }
 
 .payment-card h2 {
-  margin: 0;
-  font-size: 21px;
+  margin: 5px 0 0;
+  font-size: 22px;
+}
+
+.active-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 12px var(--red);
 }
 
 .info-box {
   margin-top: 20px;
   padding: 16px;
   background: #181818;
-  border-radius: 12px;
+  border-radius: 13px;
 }
 
 .label {
-  margin: 0 0 8px;
-  color: #777777;
-  font-size: 11px;
+  margin: 0 0 9px;
+  color: #777;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .info {
   margin: 0;
-  color: #cccccc;
+  color: #ccc;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .copy-button {
   width: 100%;
-  margin-top: 16px;
-  padding: 13px;
+  margin-top: 14px;
+  padding: 14px;
   border: 0;
-  border-radius: 12px;
-  background: white;
-  color: black;
-  font-weight: 700;
+  border-radius: 13px;
+  background: var(--red);
+  color: white;
+  font-weight: 800;
+  transition: 0.2s;
 }
 
 .copy-button:hover {
-  background: #dddddd;
+  background: #d90000;
 }
 
 .qr-box {
-  margin-top: 20px;
-  padding: 32px;
+  margin-top: 18px;
+  padding: 35px 20px;
   text-align: center;
-  border: 1px dashed #444444;
-  border-radius: 12px;
+  border: 1px dashed #444;
+  border-radius: 13px;
+}
+
+.qr-icon {
+  margin-bottom: 8px;
+  color: var(--red);
+  font-size: 38px;
 }
 
 .qr-box p {
   margin: 0;
-  color: #777777;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .qr-box span {
   display: block;
-  margin-top: 4px;
-  color: #555555;
+  margin-top: 5px;
+  color: #555;
   font-size: 12px;
 }
 
-.footer {
-  margin-top: 24px;
-  text-align: center;
-  color: #444444;
+.notice {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid #251010;
+  border-radius: 13px;
+  background: #0d0505;
+}
+
+.notice span {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--red);
   font-size: 12px;
+  font-weight: 900;
+}
+
+.notice p {
+  margin: 0;
+  color: #888;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.footer {
+  margin-top: 25px;
+  text-align: center;
+  color: #555;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.footer span {
+  color: var(--red);
 }
