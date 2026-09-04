@@ -12,6 +12,8 @@ const methods = [
 export default function AdminPage() {
   const [selected, setSelected] = useState("bitcoin")
   const [information, setInformation] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState("")
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -20,6 +22,8 @@ export default function AdminPage() {
   useEffect(() => {
     async function loadInformation() {
       setLoading(true)
+      setSelectedFile(null)
+      setPreview("")
 
       try {
         const response = await fetch(
@@ -32,6 +36,10 @@ export default function AdminPage() {
           data.information ||
             "Payment information will appear here."
         )
+
+        if (data.qr_image_url) {
+          setPreview(data.qr_image_url)
+        }
       } catch {
         setInformation(
           "Payment information will appear here."
@@ -43,6 +51,19 @@ export default function AdminPage() {
 
     loadInformation()
   }, [selected])
+
+  function handleFileChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    setSelectedFile(file)
+
+    const imageUrl = URL.createObjectURL(file)
+    setPreview(imageUrl)
+  }
 
   async function saveChanges() {
     try {
@@ -114,6 +135,7 @@ export default function AdminPage() {
         </section>
 
         <section className="admin-card">
+
           <div className="admin-title">
             <div>
               <p className="admin-label">EDITING</p>
@@ -140,9 +162,36 @@ export default function AdminPage() {
           </label>
 
           <div className="upload-box">
-            <input type="file" accept="image/*" />
-            <p>Choose QR image</p>
-            <span>PNG, JPG or WEBP</span>
+
+            {preview ? (
+              <div>
+                <img
+                  src={preview}
+                  alt="Selected QR preview"
+                  style={{
+                    width: "220px",
+                    maxWidth: "100%",
+                    borderRadius: "12px",
+                    marginBottom: "15px",
+                  }}
+                />
+
+                <p>Image selected</p>
+              </div>
+            ) : (
+              <>
+                <div className="qr-icon">▦</div>
+                <p>Choose QR image</p>
+                <span>PNG, JPG or WEBP</span>
+              </>
+            )}
+
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={handleFileChange}
+            />
+
           </div>
 
           <button
@@ -154,6 +203,7 @@ export default function AdminPage() {
               ? "✓ Saved successfully"
               : "Save changes"}
           </button>
+
         </section>
 
         <p className="admin-footer">
