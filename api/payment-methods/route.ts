@@ -1,1 +1,49 @@
-import { sql } from "@/app/db" export async function GET(request: Request) { const { searchParams } = new URL(request.url) const id = searchParams.get("id") if (!id) { return Response.json( { error: "Missing payment method" }, { status: 400 } ) } const result = await sql` SELECT id, name, information, qr_image_url FROM payment_methods WHERE id = ${id} LIMIT 1 ` if (result.length === 0) { return Response.json( { error: "Payment method not found" }, { status: 404 } ) } return Response.json(result[0]) } export async function PUT(request: Request) { const body = await request.json() const { id, information } = body if (!id) { return Response.json( { error: "Missing payment method" }, { status: 400 } ) } await sql` UPDATE payment_methods SET information = ${information || ""} WHERE id = ${id} ` return Response.json({ success: true }) } 
+import { sql } from "@/app/db"
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get("id")
+
+  if (!id) {
+    return Response.json(
+      { error: "Missing payment method" },
+      { status: 400 }
+    )
+  }
+
+  const result = await sql`
+    SELECT id, name, information, qr_image_url
+    FROM payment_methods
+    WHERE id = ${id}
+    LIMIT 1
+  `
+
+  if (result.length === 0) {
+    return Response.json(
+      { error: "Payment method not found" },
+      { status: 404 }
+    )
+  }
+
+  return Response.json(result[0])
+}
+
+export async function PUT(request: Request) {
+  const body = await request.json()
+  const { id, information } = body
+
+  if (!id) {
+    return Response.json(
+      { error: "Missing payment method" },
+      { status: 400 }
+    )
+  }
+
+  await sql`
+    UPDATE payment_methods
+    SET information = ${information || ""}
+    WHERE id = ${id}
+  `
+
+  return Response.json({ success: true })
+}
