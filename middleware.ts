@@ -3,40 +3,37 @@ import { NextRequest, NextResponse } from "next/server"
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  // Protect the admin page and the payment-method API.
-  const protectAdmin =
+  const needsProtection =
     pathname.startsWith("/admin") ||
-    (pathname.startsWith("/api/payment-methods") &&
+    (pathname === "/api/payment-methods" &&
       request.method === "PUT")
 
-  if (!protectAdmin) {
+  if (!needsProtection) {
     return NextResponse.next()
   }
 
-  const authHeader = request.headers.get("authorization")
+  const auth = request.headers.get("authorization")
 
-  if (!authHeader?.startsWith("Basic ")) {
+  if (!auth || !auth.startsWith("Basic ")) {
     return unauthorized()
   }
 
+  const encoded = auth.substring(6)
+
   try {
-    const encoded = authHeader.split(" ")[1]
-    const decoded = atob(encoded)
+    const decoded = Buffer.from(encoded, "base64").toString("utf-8")
     const separator = decoded.indexOf(":")
 
     if (separator === -1) {
       return unauthorized()
     }
 
-    const username = decoded.slice(0, separator)
-    const password = decoded.slice(separator + 1)
-
-    const validUsername = process.env.ADMIN_USERNAME
-    const validPassword = process.env.ADMIN_PASSWORD
+    const username = decoded.substring(0, separator)
+    const password = decoded.substring(separator + 1)
 
     if (
-      username !== validUsername ||
-      password !== validPassword
+      username !== process.env.ADMIN_USERNAME ||
+      password !== process.env.ADMIN_PASSWORD
     ) {
       return unauthorized()
     }
