@@ -13,7 +13,14 @@ export async function GET(request: Request) {
     }
 
     const result = await sql`
-      SELECT id, name, information, qr_image_url
+      SELECT
+        id,
+        name,
+        information,
+        qr_image_url,
+        hero_heading,
+        hero_subtitle,
+        footer_text
       FROM payment_methods
       WHERE id = ${id}
       LIMIT 1
@@ -39,7 +46,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const contentType = request.headers.get("content-type") || ""
+    const contentType =
+      request.headers.get("content-type") || ""
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData()
@@ -49,7 +57,18 @@ export async function PUT(request: Request) {
       const information =
         formData.get("information")?.toString() || ""
 
-      // Accept either field name
+      const heroHeading =
+        formData.get("hero_heading")?.toString() ||
+        "PAY WITH CRYPTO"
+
+      const heroSubtitle =
+        formData.get("hero_subtitle")?.toString() ||
+        "Secure and simple crypto payment"
+
+      const footerText =
+        formData.get("footer_text")?.toString() ||
+        "KAKOBUY"
+
       const qr =
         formData.get("qr") ||
         formData.get("qr_image")
@@ -92,14 +111,20 @@ export async function PUT(request: Request) {
           UPDATE payment_methods
           SET
             information = ${information},
-            qr_image_url = ${qrImageUrl}
+            qr_image_url = ${qrImageUrl},
+            hero_heading = ${heroHeading},
+            hero_subtitle = ${heroSubtitle},
+            footer_text = ${footerText}
           WHERE id = ${id}
         `
       } else {
         await sql`
           UPDATE payment_methods
           SET
-            information = ${information}
+            information = ${information},
+            hero_heading = ${heroHeading},
+            hero_subtitle = ${heroSubtitle},
+            footer_text = ${footerText}
           WHERE id = ${id}
         `
       }
@@ -107,6 +132,9 @@ export async function PUT(request: Request) {
       return Response.json({
         success: true,
         qr_image_url: qrImageUrl,
+        hero_heading: heroHeading,
+        hero_subtitle: heroSubtitle,
+        footer_text: footerText,
       })
     }
 
@@ -114,7 +142,19 @@ export async function PUT(request: Request) {
 
     const id = body.id
     const information = body.information || ""
-    const qrImageUrl = body.qr_image_url || ""
+
+    const heroHeading =
+      body.hero_heading || "PAY WITH CRYPTO"
+
+    const heroSubtitle =
+      body.hero_subtitle ||
+      "Secure and simple crypto payment"
+
+    const footerText =
+      body.footer_text || "KAKOBUY"
+
+    const qrImageUrl =
+      body.qr_image_url || ""
 
     if (!id) {
       return Response.json(
@@ -127,16 +167,25 @@ export async function PUT(request: Request) {
       UPDATE payment_methods
       SET
         information = ${information},
-        qr_image_url = ${qrImageUrl}
+        qr_image_url = ${qrImageUrl},
+        hero_heading = ${heroHeading},
+        hero_subtitle = ${heroSubtitle},
+        footer_text = ${footerText}
       WHERE id = ${id}
     `
 
     return Response.json({
       success: true,
       qr_image_url: qrImageUrl,
+      hero_heading: heroHeading,
+      hero_subtitle: heroSubtitle,
+      footer_text: footerText,
     })
   } catch (error) {
-    console.error("Payment method update error:", error)
+    console.error(
+      "Payment method update error:",
+      error
+    )
 
     return Response.json(
       {
