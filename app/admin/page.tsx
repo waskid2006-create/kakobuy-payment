@@ -3,22 +3,62 @@
 import { useEffect, useState } from "react"
 
 const methods = [
-  { id: "bitcoin", name: "Bitcoin", symbol: "₿" },
-  { id: "ethereum", name: "Ethereum", symbol: "Ξ" },
-  { id: "tron", name: "TRON", symbol: "TRX" },
-  { id: "binance", name: "Binance", symbol: "BNB" },
+  {
+    id: "bitcoin",
+    name: "Bitcoin",
+    symbol: "₿",
+  },
+  {
+    id: "ethereum",
+    name: "Ethereum",
+    symbol: "Ξ",
+  },
+  {
+    id: "tron",
+    name: "TRON",
+    symbol: "TRX",
+  },
+  {
+    id: "binance",
+    name: "Binance",
+    symbol: "BNB",
+  },
 ]
 
 export default function AdminPage() {
-  const [selected, setSelected] = useState("bitcoin")
-  const [information, setInformation] = useState("")
-  const [qrPreview, setQrPreview] = useState("")
-  const [qrFile, setQrFile] = useState<File | null>(null)
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [selected, setSelected] =
+    useState("bitcoin")
 
-  const current = methods.find((item) => item.id === selected)
+  const [information, setInformation] =
+    useState("")
+
+  const [heroHeading, setHeroHeading] =
+    useState("PAY WITH CRYPTO")
+
+  const [heroSubtitle, setHeroSubtitle] =
+    useState("Secure and simple crypto payment")
+
+  const [footerText, setFooterText] =
+    useState("KAKOBUY")
+
+  const [qrPreview, setQrPreview] =
+    useState("")
+
+  const [qrFile, setQrFile] =
+    useState<File | null>(null)
+
+  const [saved, setSaved] =
+    useState(false)
+
+  const [loading, setLoading] =
+    useState(true)
+
+  const [saving, setSaving] =
+    useState(false)
+
+  const current = methods.find(
+    (item) => item.id === selected
+  )
 
   useEffect(() => {
     async function loadInformation() {
@@ -39,19 +79,47 @@ export default function AdminPage() {
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Unable to load payment method"
+            data.error ||
+              "Unable to load payment method"
           )
         }
 
-        setInformation(data.information || "")
+        setInformation(
+          data.information || ""
+        )
+
+        setHeroHeading(
+          data.hero_heading ||
+            "PAY WITH CRYPTO"
+        )
+
+        setHeroSubtitle(
+          data.hero_subtitle ||
+            "Secure and simple crypto payment"
+        )
+
+        setFooterText(
+          data.footer_text ||
+            "KAKOBUY"
+        )
 
         if (data.qr_image_url) {
-          setQrPreview(data.qr_image_url)
+          setQrPreview(
+            data.qr_image_url
+          )
         }
       } catch (error) {
-        console.error("Load error:", error)
+        console.error(
+          "Load error:",
+          error
+        )
 
         setInformation("")
+        setHeroHeading("PAY WITH CRYPTO")
+        setHeroSubtitle(
+          "Secure and simple crypto payment"
+        )
+        setFooterText("KAKOBUY")
       } finally {
         setLoading(false)
       }
@@ -63,23 +131,30 @@ export default function AdminPage() {
   function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
-    const file = event.target.files?.[0]
+    const file =
+      event.target.files?.[0]
 
     if (!file) return
 
     if (!file.type.startsWith("image/")) {
-      alert("Please choose an image file.")
+      alert(
+        "Please choose an image file."
+      )
       return
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("QR image must be smaller than 5 MB.")
+      alert(
+        "QR image must be smaller than 5 MB."
+      )
       return
     }
 
     setQrFile(file)
 
-    const previewUrl = URL.createObjectURL(file)
+    const previewUrl =
+      URL.createObjectURL(file)
+
     setQrPreview(previewUrl)
     setSaved(false)
   }
@@ -93,11 +168,36 @@ export default function AdminPage() {
     try {
       const formData = new FormData()
 
-      formData.append("id", selected)
-      formData.append("information", information)
+      formData.append(
+        "id",
+        selected
+      )
+
+      formData.append(
+        "information",
+        information
+      )
+
+      formData.append(
+        "hero_heading",
+        heroHeading
+      )
+
+      formData.append(
+        "hero_subtitle",
+        heroSubtitle
+      )
+
+      formData.append(
+        "footer_text",
+        footerText
+      )
 
       if (qrFile) {
-        formData.append("qr", qrFile)
+        formData.append(
+          "qr",
+          qrFile
+        )
       }
 
       const response = await fetch(
@@ -108,7 +208,8 @@ export default function AdminPage() {
         }
       )
 
-      const text = await response.text()
+      const text =
+        await response.text()
 
       let data: any = {}
 
@@ -116,7 +217,9 @@ export default function AdminPage() {
         data = JSON.parse(text)
       } catch {
         data = {
-          error: text || "Server returned an invalid response",
+          error:
+            text ||
+            "Server returned an invalid response",
         }
       }
 
@@ -128,7 +231,9 @@ export default function AdminPage() {
       }
 
       if (data.qr_image_url) {
-        setQrPreview(data.qr_image_url)
+        setQrPreview(
+          data.qr_image_url
+        )
       }
 
       setQrFile(null)
@@ -138,7 +243,10 @@ export default function AdminPage() {
         setSaved(false)
       }, 3000)
     } catch (error) {
-      console.error("Save error:", error)
+      console.error(
+        "Save error:",
+        error
+      )
 
       alert(
         error instanceof Error
@@ -159,26 +267,36 @@ export default function AdminPage() {
             <h1>
               <span>KAKO</span>BUY
             </h1>
+
             <p>Admin Panel</p>
           </div>
 
-          <a href="/" className="back-button">
+          <a
+            href="/"
+            className="back-button"
+          >
             View page
           </a>
         </div>
 
         <section className="admin-card">
-          <h2>Payment Methods</h2>
+          <h2>
+            Payment Methods
+          </h2>
 
           <p className="admin-description">
-            Select a method to edit its payment information.
+            Select a method to edit its
+            payment information and
+            payment-page appearance.
           </p>
 
           <div className="admin-methods">
             {methods.map((method) => (
               <button
                 key={method.id}
-                onClick={() => setSelected(method.id)}
+                onClick={() =>
+                  setSelected(method.id)
+                }
                 className={`admin-method ${
                   selected === method.id
                     ? "admin-selected"
@@ -186,8 +304,13 @@ export default function AdminPage() {
                 }`}
                 type="button"
               >
-                <strong>{method.symbol}</strong>
-                <span>{method.name}</span>
+                <strong>
+                  {method.symbol}
+                </strong>
+
+                <span>
+                  {method.name}
+                </span>
               </button>
             ))}
           </div>
@@ -197,10 +320,69 @@ export default function AdminPage() {
 
           <div className="admin-title">
             <div>
-              <p className="admin-label">EDITING</p>
-              <h2>{current?.name}</h2>
+              <p className="admin-label">
+                EDITING
+              </p>
+
+              <h2>
+                {current?.name}
+              </h2>
             </div>
           </div>
+
+          <label className="field-label">
+            Hero Heading
+          </label>
+
+          <input
+            value={heroHeading}
+            onChange={(event) =>
+              setHeroHeading(
+                event.target.value
+              )
+            }
+            className="admin-input"
+            placeholder="PAY WITH CRYPTO"
+            disabled={
+              loading || saving
+            }
+          />
+
+          <label className="field-label">
+            Hero Subtitle
+          </label>
+
+          <input
+            value={heroSubtitle}
+            onChange={(event) =>
+              setHeroSubtitle(
+                event.target.value
+              )
+            }
+            className="admin-input"
+            placeholder="Secure and simple crypto payment"
+            disabled={
+              loading || saving
+            }
+          />
+
+          <label className="field-label">
+            Footer Text
+          </label>
+
+          <input
+            value={footerText}
+            onChange={(event) =>
+              setFooterText(
+                event.target.value
+              )
+            }
+            className="admin-input"
+            placeholder="KAKOBUY"
+            disabled={
+              loading || saving
+            }
+          />
 
           <label className="field-label">
             Payment information
@@ -209,11 +391,15 @@ export default function AdminPage() {
           <textarea
             value={information}
             onChange={(event) =>
-              setInformation(event.target.value)
+              setInformation(
+                event.target.value
+              )
             }
             className="admin-textarea"
             placeholder="Enter payment information"
-            disabled={loading || saving}
+            disabled={
+              loading || saving
+            }
           />
 
           <label className="field-label">
@@ -226,10 +412,14 @@ export default function AdminPage() {
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={handleQrChange}
-              disabled={loading || saving}
+              disabled={
+                loading || saving
+              }
             />
 
-            <p>Choose QR image</p>
+            <p>
+              Choose QR image
+            </p>
 
             <span>
               PNG, JPG or WEBP
@@ -249,7 +439,8 @@ export default function AdminPage() {
             >
               <p
                 style={{
-                  margin: "0 0 10px",
+                  margin:
+                    "0 0 10px",
                   color: "#999",
                   fontSize: "11px",
                   fontWeight: 700,
@@ -278,7 +469,9 @@ export default function AdminPage() {
           <button
             onClick={saveChanges}
             className="save-button"
-            disabled={loading || saving}
+            disabled={
+              loading || saving
+            }
             type="button"
           >
             {saving
