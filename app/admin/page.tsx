@@ -48,6 +48,22 @@ type PaymentMethod = {
   footer_text?: string
 }
 
+type WaitingOrder = {
+  id: string
+  full_name?: string
+  email?: string
+  total?: number | string
+  payment_method?: string
+  payment_status?: PaymentStatus
+  wallet_copied?: boolean
+  wallet_copied_at?: string
+  transaction_image?: string | null
+  transaction_submitted?: boolean
+  transaction_submitted_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
 export default function AdminPage() {
   /* ==================== 1. BASIC ADMIN STATE ==================== */
 
@@ -107,11 +123,25 @@ export default function AdminPage() {
   const [statusSaved, setStatusSaved] =
     useState(false)
 
+  /* ==================== 5. BUYER WAITING QUEUE ==================== */
+
+  const [waitingOrders, setWaitingOrders] =
+    useState<WaitingOrder[]>([])
+
+  const [queueLoading, setQueueLoading] =
+    useState(false)
+
+  const [queueError, setQueueError] =
+    useState("")
+
+  const [selectedWaitingOrder, setSelectedWaitingOrder] =
+    useState<WaitingOrder | null>(null)
+
   const current = methods.find(
     (item) => item.id === selected
   )
 
-  /* ==================== 5. LOAD PAGE 3 SETTINGS ==================== */
+  /* ==================== 6. LOAD PAGE 3 SETTINGS ==================== */
 
   useEffect(() => {
     let cancelled = false
@@ -122,10 +152,6 @@ export default function AdminPage() {
       setError("")
       setQrFile(null)
 
-      /*
-       * Clear the old cryptocurrency data
-       * before loading the newly selected one.
-       */
       setInformation("")
       setWalletAddress("")
       setHeroHeading("PAY WITH CRYPTO")
@@ -166,16 +192,6 @@ export default function AdminPage() {
           )
         }
 
-        /*
-         * Your API returns:
-         *
-         * {
-         *   paymentMethod: {...}
-         * }
-         *
-         * But this also supports APIs that
-         * return the object directly.
-         */
         const paymentMethod: PaymentMethod =
           data?.paymentMethod ||
           data?.method ||
@@ -252,7 +268,7 @@ export default function AdminPage() {
     }
   }, [selected])
 
-  /* ==================== 6. QR PREVIEW CLEANUP ==================== */
+  /* ==================== 7. QR PREVIEW CLEANUP ==================== */
 
   useEffect(() => {
     return () => {
@@ -265,7 +281,132 @@ export default function AdminPage() {
     }
   }, [qrPreview])
 
-  /* ==================== 7. LOAD ORDER STATUS ==================== */
+  /* ==================== 8. LOAD WAITING BUYERS ==================== */
+
+  async function loadWaitingOrders(
+    silent = false
+  ) {
+    if (!silent) {
+      setQueueLoading(true)
+    }
+
+    try {
+      const response = await fetch(
+        "/api/payment-status",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      )
+
+      const text =
+        await response.text()
+
+      let data: any = {}
+
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Server returned an invalid response."
+        )
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to load waiting payments."
+        )
+      }
+
+      const orders: WaitingOrder[] =
+        Array.isArray(data?.orders)
+          ? data.orders
+          : []
+
+      setWaitingOrders(orders)
+
+      setQueueError("")
+
+      /*
+       * If the currently selected order has
+       * already been handled, update/remove it.
+       */
+      if (selectedWaitingOrder) {
+        const updated =
+          orders.find(
+            (item) =>
+              String(item.id) ===
+              String(
+                selectedWaitingOrder.id
+              )
+          )
+
+        if (!updated) {
+          setSelectedWaitingOrder(null)
+        }
+      }
+    } catch (err) {
+      console.error(
+        "Waiting orders error:",
+        err
+      )
+
+      if (!silent) {
+        setQueueError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load waiting payments."
+        )
+      }
+    } finally {
+      if (!silent) {
+        setQueueLoading(false)
+      }
+    }
+  }
+
+  /* ==================== 9. LIVE ADMIN NOTIFICATION POLLING ==================== */
+
+  useEffect(() => {
+    loadWaitingOrders()
+
+    const interval =
+      window.setInterval(() => {
+        loadWaitingOrders(true)
+      }, 3000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  /* ==================== 10. SELECT WAITING ORDER ==================== */
+
+  function openWaitingOrder(
+    order: WaitingOrder
+  ) {
+    setSelectedWaitingOrder(order)
+    setOrderId(String(order.id))
+
+    const status =
+      order.payment_status || "pending"
+
+    if (
+      status === "confirmed" ||
+      status === "failed" ||
+      status === "pending"
+    ) {
+      setPaymentStatus(status)
+    }
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    })
+  }
+
+  /* ==================== 11. LOAD INDIVIDUAL ORDER STATUS ==================== */
 
   async function loadOrderStatus() {
     if (!orderId.trim()) {
@@ -316,7 +457,13 @@ export default function AdminPage() {
         setPaymentStatus(status)
       }
 
+      setSelectedWaitingOrder(
+        data.order
+      )
+
       setStatusSaved(false)
+
+      await loadWaitingOrders(true)
     } catch (err) {
       console.error(
         "Order status error:",
@@ -331,7 +478,7 @@ export default function AdminPage() {
     }
   }
 
-  /* ==================== 8. SAVE ORDER PAYMENT STATUS ==================== */
+  /* ==================== 12. SAVE ORDER PAYMENT STATUS ==================== */
 
   async function savePaymentStatus() {
     if (statusSaving) return
@@ -380,12 +527,31 @@ export default function AdminPage() {
         )
       }
 
+      const updatedOrder =
+        data?.order
+
       setPaymentStatus(
-        data?.order?.payment_status ||
+        updatedOrder?.payment_status ||
           paymentStatus
       )
 
+      if (updatedOrder) {
+        setSelectedWaitingOrder(
+          updatedOrder
+        )
+      }
+
       setStatusSaved(true)
+
+      /*
+       * Refresh the waiting queue.
+       *
+       * The order disappears from the
+       * waiting list after it has been
+       * changed from pending to confirmed
+       * or failed.
+       */
+      await loadWaitingOrders(true)
 
       window.setTimeout(() => {
         setStatusSaved(false)
@@ -406,7 +572,7 @@ export default function AdminPage() {
     }
   }
 
-  /* ==================== 9. HANDLE QR IMAGE ==================== */
+  /* ==================== 13. HANDLE QR IMAGE ==================== */
 
   function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
@@ -444,10 +610,6 @@ export default function AdminPage() {
       return
     }
 
-    /*
-     * Remove the previous temporary
-     * browser preview if there was one.
-     */
     if (
       qrPreview &&
       qrPreview.startsWith("blob:")
@@ -464,7 +626,7 @@ export default function AdminPage() {
     setError("")
   }
 
-  /* ==================== 10. SAVE PAGE 3 CHANGES ==================== */
+  /* ==================== 14. SAVE PAGE 3 CHANGES ==================== */
 
   async function saveChanges() {
     if (saving) {
@@ -479,60 +641,36 @@ export default function AdminPage() {
       const formData =
         new FormData()
 
-      /*
-       * Cryptocurrency being edited.
-       */
       formData.append(
         "id",
         selected
       )
 
-      /*
-       * Payment information shown
-       * on Page 3.
-       */
       formData.append(
         "information",
         information
       )
 
-      /*
-       * Wallet address shown
-       * on Page 3.
-       */
       formData.append(
         "wallet_address",
         walletAddress.trim()
       )
 
-      /*
-       * Page 3 hero heading.
-       */
       formData.append(
         "hero_heading",
         heroHeading
       )
 
-      /*
-       * Page 3 hero subtitle.
-       */
       formData.append(
         "hero_subtitle",
         heroSubtitle
       )
 
-      /*
-       * Page 3 footer.
-       */
       formData.append(
         "footer_text",
         footerText
       )
 
-      /*
-       * Only upload a QR image when
-       * the admin selected a new file.
-       */
       if (qrFile) {
         formData.append(
           "qr",
@@ -569,10 +707,6 @@ export default function AdminPage() {
         )
       }
 
-      /*
-       * Keep the value returned by
-       * the server.
-       */
       if (
         data?.wallet_address !==
         undefined
@@ -627,10 +761,6 @@ export default function AdminPage() {
         )
       }
 
-      /*
-       * If the API returns a new QR URL,
-       * use it immediately.
-       */
       const newQrUrl =
         data?.qr_image_url ||
         data?.qr_image
@@ -675,7 +805,7 @@ export default function AdminPage() {
     <main className="admin-page">
       <div className="admin-container">
 
-        {/* ==================== 11. ADMIN HEADER ==================== */}
+        {/* ==================== 15. ADMIN HEADER ==================== */}
 
         <header className="admin-header">
           <div>
@@ -696,7 +826,7 @@ export default function AdminPage() {
           </a>
         </header>
 
-        {/* ==================== 12. ADMIN NAVIGATION ==================== */}
+        {/* ==================== 16. ADMIN NAVIGATION ==================== */}
 
         <nav className="admin-navigation">
           <a
@@ -721,7 +851,7 @@ export default function AdminPage() {
           </a>
         </nav>
 
-        {/* ==================== 13. ERROR MESSAGE ==================== */}
+        {/* ==================== 17. ERROR MESSAGE ==================== */}
 
         {error && (
           <div className="error-box">
@@ -735,7 +865,287 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ==================== 14. PAYMENT STATUS ==================== */}
+        {/* ==================== 18. LIVE BUYER NOTIFICATION ==================== */}
+
+        {waitingOrders.length > 0 && (
+          <section className="waiting-alert">
+            <div className="waiting-alert-icon">
+              !
+            </div>
+
+            <div className="waiting-alert-content">
+              <strong>
+                BUYER WAITING FOR CONFIRMATION
+              </strong>
+
+              <span>
+                {waitingOrders.length} payment
+                {waitingOrders.length === 1
+                  ? ""
+                  : "s"} submitted for review.
+              </span>
+            </div>
+
+            <div className="waiting-pulse" />
+          </section>
+        )}
+
+        {/* ==================== 19. WAITING PAYMENTS ==================== */}
+
+        <section className="admin-card waiting-card">
+          <div className="admin-title">
+            <div>
+              <p className="admin-label">
+                LIVE PAYMENT QUEUE
+              </p>
+
+              <h2>
+                Buyer Submissions
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              className="refresh-button"
+              onClick={() =>
+                loadWaitingOrders()
+              }
+              disabled={queueLoading}
+            >
+              {queueLoading
+                ? "LOADING..."
+                : "↻ REFRESH"}
+            </button>
+          </div>
+
+          <p className="admin-description">
+            When a buyer uploads a
+            transaction screenshot and
+            confirms it, the order appears
+            here automatically.
+          </p>
+
+          {queueError && (
+            <div className="queue-error">
+              {queueError}
+            </div>
+          )}
+
+          {waitingOrders.length === 0 ? (
+            <div className="empty-queue">
+              <div className="empty-icon">
+                ✓
+              </div>
+
+              <strong>
+                NO PAYMENTS WAITING
+              </strong>
+
+              <span>
+                New buyer submissions will
+                appear here automatically.
+              </span>
+            </div>
+          ) : (
+            <div className="waiting-list">
+              {waitingOrders.map(
+                (order) => (
+                  <button
+                    type="button"
+                    key={String(
+                      order.id
+                    )}
+                    className={`waiting-order ${
+                      selectedWaitingOrder &&
+                      String(
+                        selectedWaitingOrder.id
+                      ) ===
+                        String(
+                          order.id
+                        )
+                        ? "waiting-order-selected"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      openWaitingOrder(
+                        order
+                      )
+                    }
+                  >
+                    <div className="waiting-order-left">
+                      <div className="waiting-order-icon">
+                        !
+                      </div>
+
+                      <div>
+                        <strong>
+                          {order.full_name ||
+                            "Customer"}
+                        </strong>
+
+                        <span>
+                          Order #
+                          {String(
+                            order.id
+                          )}
+                        </span>
+
+                        <small>
+                          {order.email ||
+                            "No email"}
+                        </small>
+                      </div>
+                    </div>
+
+                    <div className="waiting-order-right">
+                      <strong>
+                        {order.payment_method ||
+                          "Crypto"}
+                      </strong>
+
+                      <span>
+                        {order.transaction_submitted_at
+                          ? new Date(
+                              order.transaction_submitted_at
+                            ).toLocaleString()
+                          : "Recently submitted"}
+                      </span>
+                    </div>
+                  </button>
+                )
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ==================== 20. SELECTED BUYER REVIEW ==================== */}
+
+        {selectedWaitingOrder && (
+          <section className="admin-card review-card">
+            <div className="admin-title">
+              <div>
+                <p className="admin-label">
+                  PAYMENT REVIEW
+                </p>
+
+                <h2>
+                  Buyer Submission
+                </h2>
+              </div>
+
+              <span className="review-badge">
+                WAITING
+              </span>
+            </div>
+
+            <div className="buyer-details">
+              <div>
+                <span>
+                  CUSTOMER
+                </span>
+
+                <strong>
+                  {selectedWaitingOrder.full_name ||
+                    "Not provided"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  EMAIL
+                </span>
+
+                <strong>
+                  {selectedWaitingOrder.email ||
+                    "Not provided"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  ORDER ID
+                </span>
+
+                <strong>
+                  {String(
+                    selectedWaitingOrder.id
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  PAYMENT METHOD
+                </span>
+
+                <strong>
+                  {selectedWaitingOrder.payment_method ||
+                    "Not provided"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  TOTAL
+                </span>
+
+                <strong>
+                  {selectedWaitingOrder.total ??
+                    "Not provided"}
+                </strong>
+              </div>
+            </div>
+
+            {selectedWaitingOrder.transaction_image && (
+              <div className="transaction-review">
+                <p>
+                  TRANSACTION SCREENSHOT
+                </p>
+
+                <a
+                  href={
+                    selectedWaitingOrder.transaction_image
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={
+                      selectedWaitingOrder.transaction_image
+                    }
+                    alt="Buyer transaction screenshot"
+                  />
+                </a>
+
+                <span>
+                  Tap the image to view it
+                  larger.
+                </span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="review-load-button"
+              onClick={() => {
+                setOrderId(
+                  String(
+                    selectedWaitingOrder.id
+                  )
+                )
+
+                window.scrollTo({
+                  top: 0,
+                  behavior: "smooth",
+                })
+              }}
+            >
+              REVIEW THIS ORDER
+            </button>
+          </section>
+        )}
+
+        {/* ==================== 21. PAYMENT STATUS ==================== */}
 
         <section className="admin-card">
           <div className="admin-title">
@@ -901,7 +1311,7 @@ export default function AdminPage() {
           </button>
         </section>
 
-        {/* ==================== 15. CRYPTOCURRENCY SELECTOR ==================== */}
+        {/* ==================== 22. CRYPTOCURRENCY SELECTOR ==================== */}
 
         <section className="admin-card">
           <p className="admin-label">
@@ -949,7 +1359,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        {/* ==================== 16. PAGE 3 EDITOR ==================== */}
+        {/* ==================== 23. PAGE 3 EDITOR ==================== */}
 
         <section className="admin-card">
           <div className="admin-title">
@@ -969,8 +1379,6 @@ export default function AdminPage() {
               </span>
             )}
           </div>
-
-          {/* ==================== 17. WALLET ADDRESS ==================== */}
 
           <label className="field-label">
             Wallet Address
@@ -1001,8 +1409,6 @@ export default function AdminPage() {
             </p>
           </div>
 
-          {/* ==================== 18. HERO HEADING ==================== */}
-
           <label className="field-label">
             Hero Heading
           </label>
@@ -1020,8 +1426,6 @@ export default function AdminPage() {
               loading || saving
             }
           />
-
-          {/* ==================== 19. HERO SUBTITLE ==================== */}
 
           <label className="field-label">
             Hero Subtitle
@@ -1041,8 +1445,6 @@ export default function AdminPage() {
             }
           />
 
-          {/* ==================== 20. FOOTER TEXT ==================== */}
-
           <label className="field-label">
             Footer Text
           </label>
@@ -1060,8 +1462,6 @@ export default function AdminPage() {
               loading || saving
             }
           />
-
-          {/* ==================== 21. PAYMENT INFORMATION ==================== */}
 
           <label className="field-label">
             Payment Information
@@ -1086,8 +1486,6 @@ export default function AdminPage() {
             displayed on Page 3 for{" "}
             {current?.name}.
           </p>
-
-          {/* ==================== 22. QR CODE ==================== */}
 
           <label className="field-label">
             QR Code Image
@@ -1128,8 +1526,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* ==================== 23. SAVE PAGE 3 ==================== */}
-
           <button
             onClick={saveChanges}
             className="save-button"
@@ -1154,7 +1550,7 @@ export default function AdminPage() {
         </p>
       </div>
 
-      {/* ==================== 25. PAGE 3 ADMIN STYLES ==================== */}
+      {/* ==================== 25. ADMIN STYLES ==================== */}
 
       <style jsx>{`
         * {
@@ -1166,12 +1562,7 @@ export default function AdminPage() {
           background:
             radial-gradient(
               circle at top left,
-              rgba(
-                255,
-                48,
-                48,
-                0.12
-              ),
+              rgba(255, 48, 48, 0.12),
               transparent 35%
             ),
             #080808;
@@ -1233,10 +1624,7 @@ export default function AdminPage() {
 
         .admin-navigation {
           display: grid;
-          grid-template-columns: repeat(
-            3,
-            1fr
-          );
+          grid-template-columns: repeat(3, 1fr);
           gap: 7px;
           margin-bottom: 15px;
         }
@@ -1251,7 +1639,6 @@ export default function AdminPage() {
           color: #999;
           font-size: 10px;
           font-weight: 900;
-          transition: 0.2s ease;
         }
 
         .admin-nav-link:hover {
@@ -1265,36 +1652,142 @@ export default function AdminPage() {
           color: #fff;
         }
 
-        .error-box {
+        /* ==================== 26. LIVE ALERT ==================== */
+
+        .waiting-alert {
+          position: relative;
+          overflow: hidden;
           display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          background: rgba(
+          align-items: center;
+          gap: 13px;
+          margin-bottom: 15px;
+          padding: 15px;
+          border-radius: 15px;
+          border: 1px solid rgba(
             255,
             48,
             48,
-            0.08
+            0.55
           );
-          border: 1px solid
-            rgba(
+          background:
+            linear-gradient(
+              135deg,
+              rgba(255, 48, 48, 0.18),
+              rgba(255, 48, 48, 0.04)
+            ),
+            #111;
+          box-shadow:
+            0 0 30px rgba(
               255,
               48,
               48,
-              0.35
+              0.08
             );
-          color: #ff7777;
-          border-radius: 12px;
-          padding: 13px;
-          margin-bottom: 15px;
-          font-size: 12px;
-          line-height: 1.5;
+          animation: alertEnter 0.45s ease;
         }
 
-        .error-box strong {
-          color: #ff3030;
-          font-size: 10px;
-          white-space: nowrap;
+        .waiting-alert-icon {
+          width: 42px;
+          height: 42px;
+          flex: 0 0 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #ff3030;
+          color: #fff;
+          font-size: 22px;
+          font-weight: 900;
+          animation: alertPulse 1.4s infinite;
         }
+
+        .waiting-alert-content {
+          min-width: 0;
+        }
+
+        .waiting-alert-content strong {
+          display: block;
+          color: #fff;
+          font-size: 13px;
+          letter-spacing: 0.03em;
+        }
+
+        .waiting-alert-content span {
+          display: block;
+          color: #aaa;
+          font-size: 11px;
+          margin-top: 4px;
+        }
+
+        .waiting-pulse {
+          position: absolute;
+          width: 120px;
+          height: 120px;
+          right: -55px;
+          top: -50px;
+          border-radius: 50%;
+          border: 1px solid rgba(
+            255,
+            48,
+            48,
+            0.3
+          );
+          animation: ringPulse 2s infinite;
+        }
+
+        @keyframes alertEnter {
+          from {
+            opacity: 0;
+            transform: translateY(-12px)
+              scale(0.98);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0)
+              scale(1);
+          }
+        }
+
+        @keyframes alertPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            box-shadow:
+              0 0 0 0
+              rgba(
+                255,
+                48,
+                48,
+                0.4
+              );
+          }
+
+          50% {
+            transform: scale(1.06);
+            box-shadow:
+              0 0 0 9px
+              rgba(
+                255,
+                48,
+                48,
+                0
+              );
+          }
+        }
+
+        @keyframes ringPulse {
+          0% {
+            transform: scale(0.7);
+            opacity: 0.8;
+          }
+
+          100% {
+            transform: scale(1.4);
+            opacity: 0;
+          }
+        }
+
+        /* ==================== 27. GENERAL CARDS ==================== */
 
         .admin-card {
           background: #101010;
@@ -1341,7 +1834,8 @@ export default function AdminPage() {
           margin: 17px 0 8px;
         }
 
-        .field-help {
+        .field-help,
+        .wallet-help {
           color: #666;
           font-size: 10px;
           line-height: 1.5;
@@ -1352,6 +1846,326 @@ export default function AdminPage() {
           color: #666;
           font-size: 10px;
           font-weight: 800;
+        }
+
+        /* ==================== 28. WAITING LIST ==================== */
+
+        .refresh-button {
+          border: 1px solid #292929;
+          background: #181818;
+          color: #aaa;
+          border-radius: 9px;
+          padding: 9px 11px;
+          font-size: 10px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .refresh-button:hover {
+          border-color: #ff3030;
+          color: #fff;
+        }
+
+        .refresh-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .queue-error {
+          border: 1px solid rgba(
+            255,
+            48,
+            48,
+            0.3
+          );
+          background: rgba(
+            255,
+            48,
+            48,
+            0.06
+          );
+          color: #ff7777;
+          border-radius: 10px;
+          padding: 11px;
+          font-size: 11px;
+          margin-bottom: 12px;
+        }
+
+        .empty-queue {
+          padding: 30px 15px;
+          border: 1px dashed #292929;
+          border-radius: 13px;
+          text-align: center;
+        }
+
+        .empty-icon {
+          width: 45px;
+          height: 45px;
+          margin: 0 auto 10px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #181818;
+          color: #555;
+          font-size: 19px;
+          font-weight: 900;
+        }
+
+        .empty-queue strong {
+          display: block;
+          font-size: 11px;
+        }
+
+        .empty-queue span {
+          display: block;
+          margin-top: 5px;
+          color: #666;
+          font-size: 10px;
+        }
+
+        .waiting-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .waiting-order {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          text-align: left;
+          padding: 13px;
+          border: 1px solid #292929;
+          background: #151515;
+          color: #fff;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .waiting-order:hover {
+          border-color: #ff3030;
+          transform: translateY(-1px);
+        }
+
+        .waiting-order-selected {
+          border-color: #ff3030;
+          background: rgba(
+            255,
+            48,
+            48,
+            0.07
+          );
+        }
+
+        .waiting-order-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
+
+        .waiting-order-icon {
+          width: 34px;
+          height: 34px;
+          flex: 0 0 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: rgba(
+            255,
+            48,
+            48,
+            0.12
+          );
+          color: #ff3030;
+          font-weight: 900;
+        }
+
+        .waiting-order-left strong {
+          display: block;
+          font-size: 12px;
+        }
+
+        .waiting-order-left span,
+        .waiting-order-left small {
+          display: block;
+          margin-top: 3px;
+          color: #777;
+          font-size: 10px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .waiting-order-right {
+          text-align: right;
+          flex: 0 0 auto;
+        }
+
+        .waiting-order-right strong {
+          display: block;
+          color: #ff7777;
+          font-size: 11px;
+        }
+
+        .waiting-order-right span {
+          display: block;
+          margin-top: 4px;
+          color: #666;
+          font-size: 9px;
+        }
+
+        /* ==================== 29. BUYER REVIEW ==================== */
+
+        .review-card {
+          animation: reviewEnter 0.35s ease;
+        }
+
+        @keyframes reviewEnter {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .review-badge {
+          padding: 7px 9px;
+          border-radius: 8px;
+          background: rgba(
+            215,
+            168,
+            44,
+            0.1
+          );
+          color: #d7a82c;
+          border: 1px solid rgba(
+            215,
+            168,
+            44,
+            0.25
+          );
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .buyer-details {
+          display: grid;
+          grid-template-columns: repeat(
+            2,
+            1fr
+          );
+          gap: 9px;
+        }
+
+        .buyer-details > div {
+          padding: 11px;
+          background: #151515;
+          border: 1px solid #242424;
+          border-radius: 10px;
+          min-width: 0;
+        }
+
+        .buyer-details span {
+          display: block;
+          color: #666;
+          font-size: 8px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+        }
+
+        .buyer-details strong {
+          display: block;
+          color: #ddd;
+          font-size: 11px;
+          margin-top: 4px;
+          word-break: break-word;
+        }
+
+        .transaction-review {
+          margin-top: 15px;
+          padding: 15px;
+          border-radius: 13px;
+          background: #080808;
+          border: 1px solid #242424;
+          text-align: center;
+        }
+
+        .transaction-review p {
+          margin: 0 0 11px;
+          color: #777;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 0.12em;
+        }
+
+        .transaction-review img {
+          display: block;
+          width: 100%;
+          max-height: 500px;
+          object-fit: contain;
+          background: #fff;
+          border-radius: 10px;
+          cursor: pointer;
+        }
+
+        .transaction-review span {
+          display: block;
+          margin-top: 8px;
+          color: #555;
+          font-size: 9px;
+        }
+
+        .review-load-button {
+          width: 100%;
+          min-height: 44px;
+          margin-top: 12px;
+          border: 1px solid #292929;
+          border-radius: 10px;
+          background: #181818;
+          color: #fff;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .review-load-button:hover {
+          border-color: #ff3030;
+        }
+
+        /* ==================== 30. INPUTS ==================== */
+
+        .error-box {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          background: rgba(
+            255,
+            48,
+            48,
+            0.08
+          );
+          border: 1px solid rgba(
+            255,
+            48,
+            48,
+            0.35
+          );
+          color: #ff7777;
+          border-radius: 12px;
+          padding: 13px;
+          margin-bottom: 15px;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .error-box strong {
+          color: #ff3030;
+          font-size: 10px;
         }
 
         .admin-input,
@@ -1377,12 +2191,12 @@ export default function AdminPage() {
           border-color: #ff3030;
           box-shadow:
             0 0 0 2px
-              rgba(
-                255,
-                48,
-                48,
-                0.08
-              );
+            rgba(
+              255,
+              48,
+              48,
+              0.08
+            );
         }
 
         .admin-input:disabled,
@@ -1394,13 +2208,6 @@ export default function AdminPage() {
         .wallet-input {
           font-family: monospace;
           font-size: 12px;
-        }
-
-        .wallet-help {
-          color: #666;
-          font-size: 10px;
-          line-height: 1.5;
-          margin: 7px 2px 0;
         }
 
         .admin-textarea {
@@ -1436,6 +2243,8 @@ export default function AdminPage() {
           opacity: 0.45;
           cursor: not-allowed;
         }
+
+        /* ==================== 31. STATUS OPTIONS ==================== */
 
         .status-options {
           display: grid;
@@ -1508,18 +2317,15 @@ export default function AdminPage() {
           flex: 0 0 34px;
         }
 
-        .status-option.pending
-          .status-icon {
+        .status-option.pending .status-icon {
           color: #d7a82c;
         }
 
-        .status-option.confirmed
-          .status-icon {
+        .status-option.confirmed .status-icon {
           color: #20b66b;
         }
 
-        .status-option.failed
-          .status-icon {
+        .status-option.failed .status-icon {
           color: #ff3030;
         }
 
@@ -1556,6 +2362,8 @@ export default function AdminPage() {
           cursor: not-allowed;
         }
 
+        /* ==================== 32. CRYPTO SETTINGS ==================== */
+
         .admin-methods {
           display: grid;
           grid-template-columns: repeat(
@@ -1572,7 +2380,6 @@ export default function AdminPage() {
           background: #151515;
           color: #aaa;
           cursor: pointer;
-          transition: 0.2s ease;
         }
 
         .admin-method:hover {
@@ -1605,6 +2412,8 @@ export default function AdminPage() {
           );
           color: #fff;
         }
+
+        /* ==================== 33. QR UPLOAD ==================== */
 
         .upload-box {
           border: 1px dashed #353535;
@@ -1687,6 +2496,8 @@ export default function AdminPage() {
           color: #ff3030;
         }
 
+        /* ==================== 34. MOBILE ==================== */
+
         @media (max-width: 520px) {
           .admin-page {
             padding: 15px 12px 40px;
@@ -1717,6 +2528,22 @@ export default function AdminPage() {
 
           .admin-header {
             align-items: flex-start;
+          }
+
+          .waiting-order {
+            align-items: flex-start;
+          }
+
+          .waiting-order-right {
+            display: none;
+          }
+
+          .buyer-details {
+            grid-template-columns: 1fr;
+          }
+
+          .waiting-alert {
+            padding: 13px;
           }
         }
       `}</style>
