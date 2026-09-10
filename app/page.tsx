@@ -1,24 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
-const paymentMethods = [
-  { id: "bitcoin", name: "Bitcoin", symbol: "₿" },
-  { id: "ethereum", name: "Ethereum", symbol: "Ξ" },
-  { id: "tron", name: "TRON", symbol: "TRX" },
-  { id: "binance", name: "Binance", symbol: "BNB" },
-]
+type PaymentStatus = "pending" | "confirmed" | "failed"
 
-const CHECK_ORDER_URL =
-  "https://kakobuy-check-order.vercel.app/"
-
-const HOME_URL =
-  "https://kakobuy-mini.vercel.app/"
-
-type PaymentStatus =
-  | "pending"
-  | "confirmed"
-  | "failed"
+type PaymentMethod = {
+  id?: string
+  name?: string
+  symbol?: string
+  wallet_address?: string
+  address?: string
+  qr_image?: string | null
+  information?: string
+  description?: string
+  hero_title?: string
+  hero_subtitle?: string
+  footer_text?: string
+}
 
 type Order = {
   id: number
@@ -38,220 +36,403 @@ type Order = {
   created_at?: string
 }
 
-export default function Home() {
-  const [selected, setSelected] =
-    useState("bitcoin")
+const CHECK_ORDER_URL =
+  "https://kakobuy-check-order.vercel.app/"
 
-  const [copied, setCopied] =
-    useState(false)
+const HOME_URL =
+  "https://kakobuy-mini.vercel.app/"
 
-  const [information, setInformation] =
-    useState("")
+const PAYMENT_METHODS = [
+  {
+    id: "bitcoin",
+    name: "Bitcoin",
+    symbol: "₿",
+  },
+  {
+    id: "ethereum",
+    name: "Ethereum",
+    symbol: "Ξ",
+  },
+  {
+    id: "tron",
+    name: "TRON",
+    symbol: "TRX",
+  },
+  {
+    id: "binance",
+    name: "Binance",
+    symbol: "BNB",
+  },
+]
 
-  const [qrImage, setQrImage] =
-    useState("")
+function getOrderDetails() {
+  if (typeof window === "undefined") {
+    return null
+  }
 
-  const [loading, setLoading] =
-    useState(true)
+  const params = new URLSearchParams(window.location.search)
 
-  const [heroHeading, setHeroHeading] =
-    useState("PAY WITH CRYPTO")
+  const orderId =
+    params.get("orderId") ||
+    params.get("id")
 
-  const [heroSubtitle, setHeroSubtitle] =
-    useState(
-      "Secure and simple crypto payment"
-    )
+  const email =
+    params.get("email") || ""
 
-  const [footerText, setFooterText] =
-    useState("KAKOBUY")
+  if (!orderId) {
+    return null
+  }
+
+  return {
+    orderId,
+    email,
+  }
+}
+
+function formatMoney(value: number | string | undefined) {
+  const amount = Number(value || 0)
+
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function safeText(value: unknown) {
+  if (value === null || value === undefined) {
+    return ""
+  }
+
+  return String(value)
+}
+
+export default function PaymentPage() {
+  const [selected, setSelected] = useState("bitcoin")
+
+  const [method, setMethod] =
+    useState<PaymentMethod | null>(null)
 
   const [order, setOrder] =
     useState<Order | null>(null)
 
-  const [orderLoading, setOrderLoading] =
-    useState(false)
-
   const [paymentStatus, setPaymentStatus] =
     useState<PaymentStatus>("pending")
+
+  const [loadingMethod, setLoadingMethod] =
+    useState(true)
+
+  const [loadingOrder, setLoadingOrder] =
+    useState(true)
+
+  const [copied, setCopied] =
+    useState(false)
 
   const [statusVisible, setStatusVisible] =
     useState(false)
 
-  const [secondsLeft, setSecondsLeft] =
+  const [error, setError] =
+    useState("")
+
+  const [timeLeft, setTimeLeft] =
     useState(60)
 
-  const [timerExpired, setTimerExpired] =
-    useState(false)
-
-  const selectedMethod =
-    paymentMethods.find(
-      (item) => item.id === selected
-    )
-
   /*
-   * Get order details from the URL.
+   * Get the current order details from the URL.
    */
-  function getOrderDetails() {
-    if (typeof window === "undefined") {
-      return null
-    }
-
-    const params =
-      new URLSearchParams(
-        window.location.search
-      )
-
-    return {
-      orderId: params.get("orderId"),
-      email: params.get("email"),
-      total: params.get("total"),
-      fullName: params.get("fullName"),
-    }
-  }
+  const orderDetails = useMemo(
+    () => getOrderDetails(),
+    []
+  )
 
   /*
-   * Create a unique timer key for this order.
+   * Load payment method.
    */
-  function getTimerKey(orderId: string) {
-    return `kakobuy-payment-expiry-${orderId}`
-  }
+  const loadPaymentMethod =
+    useCallback(async () => {
+      setLoadingMethod(true)
+
+      try {
+        const response = await fetch(
+          `/api/payment-methods?id=${encodeURIComponent(
+            selected
+          )}`,
+          {
+            cache: "no-store",
+          }
+        )
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              "Unable to load payment method."
+          )
+        }
+
+        const paymentMethod =
+          data?.paymentMethod ||
+          data?.method ||
+          data
+
+        setMethod(paymentMethod || null)
+      } catch (err) {
+        console.error(
+          "Payment method error:",
+          err
+        )
+
+        setMethod(null)
+      } finally {
+        setLoadingMethod(false)
+      }
+    }, [selected])
 
   /*
-   * Start / restore the fixed 60-second timer.
-   *
-   * The expiry timestamp is saved instead of simply
-   * decrementing a number. Therefore refreshing the
-   * page does not give the buyer another minute.
+   * Load order.
+   */
+  const loadOrder =
+    useCallback(async () => {
+      const details = getOrderDetails()
+
+      if (!details || !details.orderId) {
+        setLoadingOrder(false)
+        return
+      }
+
+      const orderId = details.orderId
+      const email = details.email
+
+      setLoadingOrder(true)
+
+      try {
+        const query =
+          new URLSearchParams()
+
+        query.set("id", orderId)
+
+        if (email) {
+          query.set("email", email)
+        }
+
+        const response = await fetch(
+          `/api/orders?${query.toString()}`,
+          {
+            cache: "no-store",
+          }
+        )
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              "Unable to load order."
+          )
+        }
+
+        const loadedOrder =
+          data?.order || data
+
+        if (loadedOrder) {
+          setOrder(loadedOrder)
+
+          const status =
+            loadedOrder.payment_status ||
+            "pending"
+
+          setPaymentStatus(status)
+        }
+      } catch (err) {
+        console.error(
+          "Order loading error:",
+          err
+        )
+
+        setError(
+          "We couldn't load this order."
+        )
+      } finally {
+        setLoadingOrder(false)
+      }
+    }, [])
+
+  /*
+   * Load payment method whenever the
+   * selected payment method changes.
+   */
+  useEffect(() => {
+    loadPaymentMethod()
+  }, [loadPaymentMethod])
+
+  /*
+   * Load order when the page opens.
+   */
+  useEffect(() => {
+    loadOrder()
+  }, [loadOrder])
+
+  /*
+   * Poll payment status.
    */
   useEffect(() => {
     const details = getOrderDetails()
 
-    if (!details?.orderId) {
+    if (!details || !details.orderId) {
       return
     }
 
-    const timerKey =
-      getTimerKey(details.orderId)
+    const orderId = details.orderId
+    const email = details.email
 
-    let expiry =
-      Number(
-        sessionStorage.getItem(timerKey)
-      )
+    let active = true
 
-    if (
-      !Number.isFinite(expiry) ||
-      expiry <= 0
-    ) {
-      expiry =
-        Date.now() + 60 * 1000
+    const checkStatus = async () => {
+      try {
+        const query =
+          new URLSearchParams()
 
-      sessionStorage.setItem(
-        timerKey,
-        String(expiry)
-      )
-    }
+        query.set("orderId", orderId)
 
-    function updateTimer() {
-      const remaining = Math.max(
-        0,
-        Math.ceil(
-          (expiry - Date.now()) / 1000
+        if (email) {
+          query.set("email", email)
+        }
+
+        const response = await fetch(
+          `/api/payment-status?${query.toString()}`,
+          {
+            cache: "no-store",
+          }
         )
-      )
 
-      setSecondsLeft(remaining)
+        const data = await response.json()
 
-      if (remaining <= 0) {
-        setTimerExpired(true)
-      } else {
-        setTimerExpired(false)
+        if (!response.ok || !data.order) {
+          return
+        }
+
+        if (!active) {
+          return
+        }
+
+        const newStatus: PaymentStatus =
+          data.order.payment_status ||
+          "pending"
+
+        setPaymentStatus(newStatus)
+
+        setOrder((previous) => ({
+          ...(previous || {}),
+          ...data.order,
+        }))
+
+        if (
+          newStatus === "confirmed" ||
+          newStatus === "failed"
+        ) {
+          setStatusVisible(true)
+        }
+      } catch (error) {
+        console.error(
+          "Payment status error:",
+          error
+        )
       }
     }
 
-    updateTimer()
+    checkStatus()
 
     const interval =
       window.setInterval(
-        updateTimer,
-        250
+        checkStatus,
+        2000
       )
 
     return () => {
+      active = false
       window.clearInterval(interval)
     }
   }, [])
 
   /*
-   * Load payment method.
+   * Fixed 60-second timer.
    */
   useEffect(() => {
-    async function loadPaymentMethod() {
-      setLoading(true)
-      setInformation("")
-      setQrImage("")
-
-      try {
-        const response =
-          await fetch(
-            `/api/payment-methods?id=${selected}`,
-            {
-              cache: "no-store",
-            }
-          )
-
-        const data =
-          await response.json()
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-              "Unable to load payment information"
-          )
-        }
-
-        setInformation(
-          data.information || ""
-        )
-
-        setQrImage(
-          data.qr_image_url || ""
-        )
-
-        setHeroHeading(
-          data.hero_heading ||
-            "PAY WITH CRYPTO"
-        )
-
-        setHeroSubtitle(
-          data.hero_subtitle ||
-            "Secure and simple crypto payment"
-        )
-
-        setFooterText(
-          data.footer_text ||
-            "KAKOBUY"
-        )
-      } catch (error) {
-        console.error(
-          "Payment method loading error:",
-          error
-        )
-
-        setInformation("")
-        setQrImage("")
-      } finally {
-        setLoading(false)
-      }
+    if (!orderDetails?.orderId) {
+      return
     }
 
-    loadPaymentMethod()
-  }, [selected])
+    const storageKey =
+      `kakobuy-payment-timer-${orderDetails.orderId}`
+
+    const now = Date.now()
+
+    let expiresAt =
+      Number(
+        sessionStorage.getItem(storageKey)
+      ) || 0
+
+    if (
+      !expiresAt ||
+      expiresAt <= now
+    ) {
+      expiresAt = now + 60 * 1000
+
+      sessionStorage.setItem(
+        storageKey,
+        String(expiresAt)
+      )
+    }
+
+    const updateTimer = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil(
+          (expiresAt - Date.now()) /
+            1000
+        )
+      )
+
+      setTimeLeft(remaining)
+    }
+
+    updateTimer()
+
+    const timer =
+      window.setInterval(
+        updateTimer,
+        1000
+      )
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [orderDetails?.orderId])
 
   /*
-   * Load order.
+   * Copy wallet/payment information.
    */
-  useEffect(() => {
-    async function loadOrder() {
+  async function copyInfo() {
+    const wallet =
+      method?.wallet_address ||
+      method?.address ||
+      ""
+
+    if (!wallet) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        wallet
+      )
+
+      setCopied(true)
+
+      window.setTimeout(() => {
+        setCopied(false)
+      }, 2000)
+
       const details =
         getOrderDetails()
 
@@ -259,454 +440,81 @@ export default function Home() {
         return
       }
 
-      setOrderLoading(true)
-
-      try {
-        const query =
-          new URLSearchParams()
-
-        query.set(
-          "id",
-          details.orderId
-        )
-
-        if (details.email) {
-          query.set(
-            "email",
-            details.email
-          )
-        }
-
-        const response =
-          await fetch(
-            `/api/orders?${query.toString()}`,
-            {
-              cache: "no-store",
-            }
-          )
-
-        const data =
-          await response.json()
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-              "Unable to load order."
-          )
-        }
-
-        if (data.order) {
-          setOrder(data.order)
-
-          setPaymentStatus(
-            data.order.payment_status ||
-              "pending"
-          )
-        }
-      } catch (error) {
-        console.error(
-          "Order loading error:",
-          error
-        )
-
-        /*
-         * Still display the order total if
-         * the order request temporarily fails.
-         */
-        setOrder({
-          id: Number(
-            details.orderId
-          ),
-          email:
-            details.email || "",
-          full_name:
-            details.fullName || "",
-          total:
-            details.total || 0,
-          payment_status:
-            "pending",
-        })
-      } finally {
-        setOrderLoading(false)
-      }
-    }
-
-    loadOrder()
-  }, [])
-  
-    /*
-   * Poll payment status.
-   */
-  useEffect(() => {
-    const details = getOrderDetails()
-
-    if (!details || !details.orderId) {
-      return
-    }
-
-    const orderId = details.orderId
-    const email = details.email
-
-    let active = true
-
-    const checkStatus = async () => {
-      try {
-        const query = new URLSearchParams()
-
-        query.set("orderId", orderId)
-
-        if (email) {
-          query.set("email", email)
-        }
-
-        const response = await fetch(
-          `/api/payment-status?${query.toString()}`,
+      const response =
+        await fetch(
+          "/api/payment-status",
           {
-            cache: "no-store",
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              orderId:
+                details.orderId,
+              email:
+                details.email || undefined,
+              wallet_copied: true,
+            }),
           }
         )
 
-        const data = await response.json()
-
-        if (!response.ok || !data.order) {
-          return
-        }
-
-        if (!active) {
-          return
-        }
-
-        const newStatus: PaymentStatus =
-          data.order.payment_status || "pending"
-
-        setPaymentStatus(newStatus)
-
-        setOrder((previous) => ({
-          ...(previous || {}),
-          ...data.order,
-        }))
-
-        if (
-          newStatus === "confirmed" ||
-          newStatus === "failed"
-        ) {
-          setStatusVisible(true)
-        }
-      } catch (error) {
+      if (!response.ok) {
         console.error(
-          "Payment status error:",
-          error
+          "Could not save wallet copied status."
         )
       }
-    }
-
-    checkStatus()
-
-    const interval = window.setInterval(
-      checkStatus,
-      2000
-    )
-
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
-  }, [])
-        /*
-         * Automatically open the status animation
-         * when the admin confirms or fails payment.
-         */
-        if (
-          newStatus === "confirmed" ||
-          newStatus === "failed"
-        ) {
-          setStatusVisible(true)
-        }
-      } catch (error) {
-        console.error(
-          "Payment status error:",
-          error
-        )
-      }
-    }
-
-    checkStatus()
-
-    const interval = window.setInterval(
-      checkStatus,
-      2000
-    )
-
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
-  }, [])
-
-        /*
-         * Automatically open the status animation
-         * when the admin confirms or fails payment.
-         */
-        if (
-          newStatus ===
-            "confirmed" ||
-          newStatus ===
-            "failed"
-        ) {
-          setStatusVisible(true)
-        }
-      } catch (error) {
-  /*
-   * Poll payment status.
-   */
-  useEffect(() => {
-    const details = getOrderDetails()
-
-    if (!details || !details.orderId) {
-      return
-    }
-
-    const orderId = details.orderId
-    const email = details.email
-
-    let active = true
-
-    const checkStatus = async () => {
-      try {
-        const query = new URLSearchParams()
-
-        query.set("orderId", orderId)
-
-        if (email) {
-          query.set("email", email)
-        }
-
-        const response = await fetch(
-          `/api/payment-status?${query.toString()}`,
-          {
-            cache: "no-store",
-          }
-        )
-
-        const data = await response.json()
-
-        if (!response.ok || !data.order) {
-          return
-        }
-
-        if (!active) {
-          return
-        }
-
-        const newStatus: PaymentStatus =
-          data.order.payment_status || "pending"
-
-        setPaymentStatus(newStatus)
-
-        setOrder((previous) => ({
-          ...(previous || {}),
-          ...data.order,
-        }))
-
-        if (
-          newStatus === "confirmed" ||
-          newStatus === "failed"
-        ) {
-          setStatusVisible(true)
-        }
-      } catch (error) {
-        console.error(
-          "Payment status error:",
-          error
-        )
-      }
-    }
-
-    checkStatus()
-
-    const interval = window.setInterval(
-      checkStatus,
-      2000
-    )
-
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
-  }, [])
-
-  /*
-   * Copy wallet/payment information.
-   */
-  /*
-   * Copy wallet/payment information.
-   */
-  async function copyInfo() {
-    if (!information) {
-      return
-    }
-
-    /*
-     * Do not allow copying after the
-     * one-minute payment window expires.
-     */
-    if (timerExpired) {
-      setStatusVisible(true)
-      return
-    }
-
-    try {
-      await navigator.clipboard.writeText(
-        information
-      )
-
-      setCopied(true)
-
-      setStatusVisible(true)
-
-      const details =
-        getOrderDetails()
-
-      if (details?.orderId) {
-        try {
-          const response =
-            await fetch(
-              "/api/payment-status",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-                body: JSON.stringify({
-                  orderId:
-                    details.orderId,
-                  email:
-                    details.email || "",
-                  paymentMethod:
-                    selected,
-                }),
-              }
-            )
-
-          const data =
-            await response.json()
-
-          if (
-            response.ok &&
-            data.order
-          ) {
-            setOrder(
-              (previous) => ({
-                ...(previous || {}),
-                ...data.order,
-              })
-            )
-
-            setPaymentStatus(
-              data.order
-                .payment_status ||
-                "pending"
-            )
-          }
-        } catch (error) {
-          console.error(
-            "Wallet copied update error:",
-            error
-          )
-        }
-      }
-
-      window.setTimeout(() => {
-        setCopied(false)
-      }, 2500)
     } catch (error) {
       console.error(
-        "Clipboard error:",
+        "Copy wallet error:",
         error
-      )
-
-      alert(
-        "Unable to copy automatically. Please copy the payment information manually."
       )
     }
   }
 
   /*
-   * Download invoice.
+   * Download a simple invoice.
    */
   function downloadInvoice() {
-    const details =
-      getOrderDetails()
+    if (!order) {
+      return
+    }
 
-    const orderId =
-      order?.id ||
-      Number(
-        details?.orderId || 0
-      )
-
-    const buyerName =
-      order?.full_name ||
-      details?.fullName ||
-      "Customer"
-
-    const buyerEmail =
-      order?.email ||
-      details?.email ||
-      ""
-
-    const orderTotal =
-      Number(
-        order?.total ??
-          details?.total ??
-          0
-      ).toFixed(2)
-
-    const method =
-      order?.payment_method ||
-      selectedMethod?.name ||
-      "Crypto"
-
-    const status =
-      paymentStatus.toUpperCase()
-
-    const createdAt =
-      order?.created_at
-        ? new Date(
-            order.created_at
-          ).toLocaleString()
-        : new Date().toLocaleString()
-
-    const invoice = `
-KAKOBUY
-${footerText}
-
-PAYMENT INVOICE
-==============================
-
-Order ID: ${orderId}
-Customer: ${buyerName}
-Email: ${buyerEmail}
-
-Payment Method: ${method}
-Payment Status: ${status}
-
-Order Total: $${orderTotal}
-
-Created: ${createdAt}
-
-==============================
-
-Thank you for your order.
-Please keep this invoice for your records.
-`
+    const lines = [
+      "KAKOBUY",
+      "PAYMENT INVOICE",
+      "",
+      `Order ID: ${safeText(
+        order.id
+      )}`,
+      `Name: ${safeText(
+        order.full_name
+      )}`,
+      `Email: ${safeText(
+        order.email
+      )}`,
+      `Payment Method: ${safeText(
+        order.payment_method ||
+          method?.name
+      )}`,
+      `Total: ${formatMoney(
+        order.total
+      )}`,
+      `Payment Status: ${safeText(
+        order.payment_status ||
+          paymentStatus
+      )}`,
+      "",
+      `Created: ${safeText(
+        order.created_at
+      )}`,
+    ]
 
     const blob =
       new Blob(
-        [invoice.trim()],
+        [lines.join("\n")],
         {
-          type:
-            "text/plain;charset=utf-8",
+          type: "text/plain",
         }
       )
 
@@ -719,2110 +527,1020 @@ Please keep this invoice for your records.
     link.href = url
 
     link.download =
-      `KAKOBUY-Invoice-${orderId}.txt`
+      `kakobuy-invoice-${order.id}.txt`
 
-    document.body.appendChild(
-      link
-    )
+    document.body.appendChild(link)
 
     link.click()
 
-    document.body.removeChild(
-      link
-    )
+    document.body.removeChild(link)
 
     URL.revokeObjectURL(url)
   }
 
-  /*
-   * Status title.
-   */
-  function getStatusTitle() {
+  function statusText() {
     if (
       paymentStatus ===
       "confirmed"
     ) {
-      return "Payment Confirmed"
+      return "Payment confirmed"
     }
 
     if (
       paymentStatus ===
       "failed"
     ) {
-      return "Payment Failed"
+      return "Payment failed"
     }
 
-    if (timerExpired) {
-      return "Payment window expired"
-    }
-
-    return "Payment waiting for confirmation"
+    return "Payment pending"
   }
 
-  /*
-   * Status message.
-   */
-  function getStatusMessage() {
-    if (
-      paymentStatus ===
-      "confirmed"
-    ) {
-      return "Your payment has been confirmed successfully."
-    }
+  const wallet =
+    method?.wallet_address ||
+    method?.address ||
+    ""
 
-    if (
-      paymentStatus ===
-      "failed"
-    ) {
-      return "Your payment could not be confirmed. Please check your order or contact support."
-    }
+  const selectedName =
+    PAYMENT_METHODS.find(
+      (item) =>
+        item.id === selected
+    )?.name || selected
 
-    if (timerExpired) {
-      return "The 1-minute payment window has ended. Please return to your order and try again."
-    }
+  const heroTitle =
+    method?.hero_title ||
+    `Pay with ${selectedName}`
 
-    return "Complete your payment before the countdown reaches zero."
-  }
+  const heroSubtitle =
+    method?.hero_subtitle ||
+    "Send your payment to the wallet address below."
 
-  /*
-   * Format timer.
-   */
-  function formatTimer(
-    seconds: number
-  ) {
-    const minutes =
-      Math.floor(
-        seconds / 60
-      )
+  const footerText =
+    method?.footer_text ||
+    "KAKOBUY secure crypto payment"
 
-    const remainingSeconds =
-      seconds % 60
-
-    return `${String(
-      minutes
-    ).padStart(2, "0")}:${String(
-      remainingSeconds
-    ).padStart(2, "0")}`
-  }
+  const isLoading =
+    loadingMethod ||
+    loadingOrder
 
   return (
     <main className="page">
-      <div className="container">
+      <div className="backgroundGlow glowOne" />
+      <div className="backgroundGlow glowTwo" />
 
-        {/* HERO */}
-        <header className="header hero-slide">
-          <h1>
-            <span className="kako">
-              {heroHeading}
-            </span>
-          </h1>
+      <header className="header">
+        <a
+          href={HOME_URL}
+          className="logo"
+        >
+          <span className="logoMark">
+            K
+          </span>
 
-          <p>
-            {heroSubtitle}
-          </p>
-        </header>
+          <span className="logoText">
+            KAKOBUY
+          </span>
+        </a>
 
-        {/* ORDER TOTAL */}
-        {(order ||
-          getOrderDetails()
-            ?.total) && (
-          <section className="order-summary">
+        <a
+          href={CHECK_ORDER_URL}
+          className="checkOrder"
+        >
+          Check order
+        </a>
+      </header>
+
+      <section className="container">
+        <div className="hero">
+          <div className="eyebrow">
+            SECURE PAYMENT
+          </div>
+
+          <h1>{heroTitle}</h1>
+
+          <p>{heroSubtitle}</p>
+        </div>
+
+        {error && (
+          <div className="errorBox">
+            {error}
+          </div>
+        )}
+
+        {order && (
+          <div className="orderCard">
             <div>
-              <span className="summary-label">
-                ORDER TOTAL
+              <span className="smallLabel">
+                ORDER
               </span>
 
               <strong>
-                $
-                {Number(
-                  order?.total ??
-                    getOrderDetails()
-                      ?.total ??
-                    0
-                ).toFixed(2)}
+                #{order.id}
               </strong>
             </div>
 
-            {order?.id && (
-              <span className="order-number">
-                Order #{order.id}
+            <div className="orderTotal">
+              <span className="smallLabel">
+                TOTAL
               </span>
-            )}
-          </section>
+
+              <strong>
+                {formatMoney(
+                  order.total
+                )}
+              </strong>
+            </div>
+          </div>
         )}
 
-        {/* PAYMENT METHODS */}
-        <div className="methods">
-          {paymentMethods.map(
-            (method) => (
-              <button
-                key={method.id}
-                onClick={() =>
-                  setSelected(
-                    method.id
-                  )
-                }
-                className={`method ${
-                  selected ===
-                  method.id
-                    ? "selected"
-                    : ""
-                }`}
-                type="button"
-                disabled={
-                  timerExpired ||
-                  paymentStatus ===
-                    "confirmed"
-                }
-              >
-                <span className="symbol">
-                  {method.symbol}
-                </span>
-
-                <span className="name">
-                  {method.name}
-                </span>
-              </button>
-            )
-          )}
-        </div>
-
-        {/* PAYMENT CARD */}
-        <section className="payment-card">
-
-          <div className="card-title">
+        <div className="paymentCard">
+          <div className="cardHeader">
             <div>
-              <span className="small-title">
+              <span className="smallLabel">
                 PAYMENT METHOD
               </span>
 
               <h2>
-                {selectedMethod?.name}
+                Choose payment
               </h2>
             </div>
 
-            <div className="active-dot" />
+            <div className="timer">
+              <span>
+                TIME
+              </span>
+
+              <strong>
+                {timeLeft}s
+              </strong>
+            </div>
           </div>
 
-          {/* PAYMENT INFORMATION */}
-          <div className="info-box">
-            <p className="label">
-              Payment information
-            </p>
+          <div className="methodGrid">
+            {PAYMENT_METHODS.map(
+              (item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`methodButton ${
+                    selected ===
+                    item.id
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setSelected(
+                      item.id
+                    )
+                  }
+                >
+                  <span className="methodSymbol">
+                    {item.symbol}
+                  </span>
 
-            <p className="info">
-              {loading
-                ? "Loading..."
-                : information ||
-                  "No payment information available."}
-            </p>
-          </div>
-
-          {/* COUNTDOWN */}
-          <div
-            className={`payment-countdown ${
-              timerExpired
-                ? "expired"
-                : secondsLeft <=
-                    10
-                  ? "urgent"
-                  : ""
-            }`}
-          >
-            <span>
-              PAYMENT WINDOW
-            </span>
-
-            <strong>
-              {formatTimer(
-                secondsLeft
-              )}
-            </strong>
-
-            <small>
-              {timerExpired
-                ? "TIME EXPIRED"
-                : "Complete payment within 1 minute"}
-            </small>
-          </div>
-
-          {/* COPY */}
-          <button
-            className="copy-button"
-            onClick={copyInfo}
-            disabled={
-              loading ||
-              !information ||
-              timerExpired ||
-              paymentStatus ===
-                "confirmed"
-            }
-            type="button"
-          >
-            {copied
-              ? "✓ Copy successful"
-              : timerExpired
-                ? "Payment window expired"
-                : "Copy wallet address"}
-          </button>
-
-          {/* QR */}
-          <div className="qr-box">
-            {loading ? (
-              <>
-                <div className="qr-icon">
-                  ▦
-                </div>
-
-                <p>
-                  QR CODE
-                </p>
-
-                <span>
-                  Loading QR image...
-                </span>
-              </>
-            ) : qrImage ? (
-              <>
-                <img
-                  src={qrImage}
-                  alt={`${selectedMethod?.name} QR Code`}
-                  style={{
-                    display: "block",
-                    width: "220px",
-                    height: "220px",
-                    maxWidth: "100%",
-                    objectFit:
-                      "contain",
-                    margin:
-                      "0 auto 15px",
-                    background:
-                      "#fff",
-                    borderRadius:
-                      "10px",
-                  }}
-                />
-
-                <p>
-                  QR CODE
-                </p>
-
-                <span>
-                  Scan to make payment
-                </span>
-              </>
-            ) : (
-              <>
-                <div className="qr-icon">
-                  ▦
-                </div>
-
-                <p>
-                  QR CODE
-                </p>
-
-                <span>
-                  QR image not available
-                </span>
-              </>
+                  <span>
+                    {item.name}
+                  </span>
+                </button>
+              )
             )}
           </div>
-        </section>
 
-        {/* WARNING */}
-        <div className="notice">
-          <span>!</span>
+          {isLoading ? (
+            <div className="loading">
+              <div className="spinner" />
+              <p>
+                Loading payment
+                details...
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="paymentInfo">
+                <div className="paymentTitle">
+                  <div>
+                    <span className="smallLabel">
+                      SEND PAYMENT
+                    </span>
 
-          <p>
-            Please make sure you
-            select the correct
-            payment method before
-            copying the wallet address.
-          </p>
+                    <h3>
+                      {method?.name ||
+                        selectedName}
+                    </h3>
+                  </div>
+
+                  <span className="coinBadge">
+                    {method?.symbol ||
+                      PAYMENT_METHODS.find(
+                        (item) =>
+                          item.id ===
+                          selected
+                      )?.symbol}
+                  </span>
+                </div>
+
+                {method?.qr_image && (
+                  <div className="qrBox">
+                    <img
+                      src={
+                        method.qr_image
+                      }
+                      alt={`${selectedName} QR code`}
+                    />
+                  </div>
+                )}
+
+                <div className="walletBox">
+                  <span className="smallLabel">
+                    WALLET ADDRESS
+                  </span>
+
+                  <div className="walletRow">
+                    <div className="walletAddress">
+                      {wallet ||
+                        "Wallet address not available"}
+                    </div>
+
+                    <button
+                      type="button"
+                      className={`copyButton ${
+                        copied
+                          ? "copied"
+                          : ""
+                      }`}
+                      onClick={
+                        copyInfo
+                      }
+                      disabled={!wallet}
+                    >
+                      {copied
+                        ? "Copied"
+                        : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {method?.information ||
+                method?.description ? (
+                  <div className="information">
+                    {method.information ||
+                      method.description}
+                  </div>
+                ) : null}
+
+                <div className="warning">
+                  <span className="warningIcon">
+                    !
+                  </span>
+
+                  <p>
+                    Make sure you send
+                    the correct payment
+                    to the wallet address
+                    shown above.
+                  </p>
+                </div>
+              </div>
+
+              <div className="statusSection">
+                <div
+                  className={`statusDot ${
+                    paymentStatus
+                  }`}
+                />
+
+                <div>
+                  <strong>
+                    {statusText()}
+                  </strong>
+
+                  <span>
+                    We check your
+                    payment status
+                    automatically.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="liveButton"
+                  onClick={() =>
+                    loadOrder()
+                  }
+                >
+                  Live
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* ACTIONS */}
         <div className="actions">
-
           <button
             type="button"
-            className="invoice-button"
+            className="invoiceButton"
             onClick={
               downloadInvoice
             }
-            disabled={
-              orderLoading
-            }
+            disabled={!order}
           >
-            📄 Download invoice
+            Download invoice
           </button>
 
           <a
             href={CHECK_ORDER_URL}
-            className="navigation-button"
+            className="secondaryButton"
           >
-            ← Back to check order
+            Check order status
           </a>
-
-          <a
-            href={HOME_URL}
-            className="navigation-button"
-          >
-            HOME
-          </a>
-
         </div>
 
-        {/* FOOTER */}
         <p className="footer">
           {footerText}
         </p>
-      </div>
+      </section>
 
-      {/* NITRO STYLE PAYMENT STATUS */}
       {statusVisible && (
-        <div
-          className={`status-overlay ${paymentStatus} ${
-            timerExpired
-              ? "timer-expired"
-              : ""
-          }`}
-          onClick={() =>
-            setStatusVisible(
-              false
-            )
-          }
-        >
-          <div
-            className="nitro-status-card"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-
-            {/* MOVING GLOWS */}
-            <div className="nitro-glow glow-one" />
-            <div className="nitro-glow glow-two" />
-            <div className="nitro-glow glow-three" />
-
-            {/* PARTICLES */}
-            <div className="nitro-particles">
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
+        <div className="overlay">
+          <div className="statusModal">
+            <div
+              className={`statusAnimation ${
+                paymentStatus
+              }`}
+            >
+              {paymentStatus ===
+              "confirmed"
+                ? "✓"
+                : paymentStatus ===
+                  "failed"
+                ? "!"
+                : "•"}
             </div>
 
-            {/* TOP */}
-            <div className="nitro-status-top">
-              <span className="nitro-brand">
-                KAKOBUY
-              </span>
+            <span className="smallLabel">
+              PAYMENT STATUS
+            </span>
 
-              <span className="nitro-live">
-                {timerExpired
-                  ? "EXPIRED"
-                  : paymentStatus ===
-                      "confirmed"
-                    ? "PAID"
-                    : "LIVE"}
-              </span>
-            </div>
+            <h2>
+              {statusText()}
+            </h2>
 
-            {/* ICON */}
-            <div className="nitro-icon-wrap">
+            <p>
+              {paymentStatus ===
+              "confirmed"
+                ? "Your payment has been confirmed successfully."
+                : paymentStatus ===
+                  "failed"
+                ? "Your payment could not be confirmed."
+                : "Your payment is still being checked."}
+            </p>
 
-              <div className="nitro-ring ring-one" />
-              <div className="nitro-ring ring-two" />
-
-              <div className="nitro-icon">
-                {paymentStatus ===
-                "confirmed"
-                  ? "✓"
-                  : paymentStatus ===
-                    "failed"
-                    ? "!"
-                    : timerExpired
-                      ? "!"
-                      : "◌"}
-              </div>
-
-            </div>
-
-            {/* CONTENT */}
-            <div className="nitro-status-content">
-
-              <span className="nitro-status-label">
-                PAYMENT STATUS
-              </span>
-
-              <h2>
-                {getStatusTitle()}
-              </h2>
-
-              <p>
-                {getStatusMessage()}
-              </p>
-
-            </div>
-
-            {/* BIG COUNTDOWN */}
-            {paymentStatus ===
-                "pending" &&
-              !timerExpired && (
-                <div className="nitro-countdown">
-                  <span>
-                    TIME REMAINING
-                  </span>
-
-                  <strong>
-                    {formatTimer(
-                      secondsLeft
-                    )}
-                  </strong>
-
-                  <div className="nitro-countdown-line">
-                    <div
-                      style={{
-                        width: `${Math.max(
-                          0,
-                          Math.min(
-                            100,
-                            (secondsLeft /
-                              60) *
-                              100
-                          )
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-            {/* EXPIRED COUNTDOWN */}
-            {timerExpired &&
-              paymentStatus ===
-                "pending" && (
-                <div className="nitro-expired-box">
-                  <span>
-                    PAYMENT WINDOW
-                  </span>
-
-                  <strong>
-                    00:00
-                  </strong>
-                </div>
-              )}
-
-            {/* BOTTOM */}
-            <div className="nitro-status-bottom">
-
-              <span>
-                ORDER #
-                {order?.id || "—"}
-              </span>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setStatusVisible(
-                    false
-                  )
-                }
-              >
-                CLOSE
-              </button>
-
-            </div>
+            <button
+              type="button"
+              className="closeButton"
+              onClick={() =>
+                setStatusVisible(
+                  false
+                )
+              }
+            >
+              Continue
+            </button>
           </div>
         </div>
       )}
 
-      {/* COPY CONFIRMATION */}
-      {copied &&
-        !statusVisible && (
-          <div className="copy-floating">
-            ✓ Payment information
-            copied
-          </div>
-        )}
-
-      {/* LIVE STATUS BUTTON */}
-      {order?.id && (
-        <button
-          type="button"
-          className={`live-status ${paymentStatus} ${
-            timerExpired
-              ? "expired"
-              : ""
-          }`}
-          onClick={() =>
-            setStatusVisible(
-              true
-            )
-          }
-        >
-          <span className="live-dot" />
-
-          {paymentStatus ===
-          "confirmed"
-            ? "Payment Confirmed"
-            : paymentStatus ===
-              "failed"
-              ? "Payment Failed"
-              : timerExpired
-                ? "Payment window expired"
-                : "Payment waiting for confirmation"}
-        </button>
-      )}
-
       <style jsx>{`
-        /* ================================
-           HERO
-        ================================= */
-
-        .hero-slide {
-          animation:
-            heroSlideIn
-            0.8s
-            ease-out both;
+        * {
+          box-sizing: border-box;
         }
 
-        @keyframes heroSlideIn {
-          from {
-            opacity: 0;
-            transform:
-              translateY(-35px);
-          }
-
-          to {
-            opacity: 1;
-            transform:
-              translateY(0);
-          }
+        .page {
+          min-height: 100vh;
+          background:
+            radial-gradient(
+              circle at top left,
+              rgba(255, 255, 255, 0.08),
+              transparent 32%
+            ),
+            #080808;
+          color: #fff;
+          padding: 0 18px 50px;
+          position: relative;
+          overflow: hidden;
+          font-family:
+            Inter,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
         }
 
-        /* ================================
-           ORDER SUMMARY
-        ================================= */
+        .backgroundGlow {
+          position: fixed;
+          width: 320px;
+          height: 320px;
+          border-radius: 50%;
+          filter: blur(100px);
+          opacity: 0.13;
+          pointer-events: none;
+        }
 
-        .order-summary {
+        .glowOne {
+          background: #ffffff;
+          top: -180px;
+          left: -120px;
+        }
+
+        .glowTwo {
+          background: #555;
+          bottom: -180px;
+          right: -120px;
+        }
+
+        .header {
+          max-width: 920px;
+          margin: 0 auto;
+          padding: 22px 0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: relative;
+          z-index: 2;
+        }
+
+        .logo {
+          color: #fff;
+          text-decoration: none;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+        }
+
+        .logoMark {
+          width: 36px;
+          height: 36px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: #fff;
+          color: #000;
+          font-weight: 900;
+        }
+
+        .logoText {
+          font-size: 15px;
+        }
+
+        .checkOrder {
+          color: #fff;
+          text-decoration: none;
+          font-size: 13px;
+          padding: 9px 14px;
+          border: 1px solid #292929;
+          border-radius: 9px;
+        }
+
+        .container {
           width: 100%;
-          max-width: 520px;
-          margin: 0 auto 22px;
-          padding: 17px 18px;
+          max-width: 680px;
+          margin: 0 auto;
+          position: relative;
+          z-index: 1;
+        }
 
-          border: 1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.1
-            );
+        .hero {
+          text-align: center;
+          padding: 55px 0 28px;
+        }
 
-          border-radius: 16px;
+        .eyebrow,
+        .smallLabel {
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.16em;
+          color: #858585;
+        }
 
+        .hero h1 {
+          font-size: clamp(
+            32px,
+            8vw,
+            58px
+          );
+          line-height: 1;
+          letter-spacing: -0.055em;
+          margin: 12px 0;
+        }
+
+        .hero p {
+          color: #999;
+          max-width: 480px;
+          margin: 0 auto;
+          line-height: 1.6;
+          font-size: 14px;
+        }
+
+        .errorBox {
+          background: #241313;
+          border: 1px solid #572525;
+          color: #ffb2b2;
+          padding: 14px;
+          border-radius: 12px;
+          margin-bottom: 14px;
+          font-size: 13px;
+        }
+
+        .orderCard {
+          display: flex;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 18px;
           background: #111;
+          border: 1px solid #252525;
+          border-radius: 16px;
+          margin-bottom: 14px;
+        }
 
+        .orderCard strong {
+          display: block;
+          margin-top: 5px;
+          font-size: 14px;
+        }
+
+        .orderTotal {
+          text-align: right;
+        }
+
+        .paymentCard {
+          background: #101010;
+          border: 1px solid #292929;
+          border-radius: 22px;
+          padding: 20px;
+          box-shadow:
+            0 25px 80px
+              rgba(0, 0, 0, 0.4);
+        }
+
+        .cardHeader {
+          display: flex;
+          justify-content: space-between;
+          gap: 15px;
+          align-items: flex-start;
+        }
+
+        .cardHeader h2 {
+          margin: 7px 0 0;
+          font-size: 22px;
+          letter-spacing: -0.03em;
+        }
+
+        .timer {
+          text-align: right;
+        }
+
+        .timer strong {
+          display: block;
+          margin-top: 5px;
+          font-size: 18px;
+        }
+
+        .methodGrid {
+          display: grid;
+          grid-template-columns: repeat(
+            4,
+            1fr
+          );
+          gap: 8px;
+          margin: 22px 0;
+        }
+
+        .methodButton {
+          min-height: 72px;
+          border-radius: 12px;
+          border: 1px solid #292929;
+          background: #151515;
+          color: #aaa;
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          gap: 7px;
+          font-size: 11px;
+          transition: 0.2s ease;
+        }
+
+        .methodButton:hover {
+          border-color: #555;
+        }
+
+        .methodButton.active {
+          background: #fff;
+          border-color: #fff;
+          color: #000;
+        }
+
+        .methodSymbol {
+          font-size: 20px;
+          font-weight: 800;
+        }
+
+        .loading {
+          min-height: 250px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          color: #777;
+          gap: 15px;
+        }
+
+        .spinner {
+          width: 34px;
+          height: 34px;
+          border: 3px solid #292929;
+          border-top-color: #fff;
+          border-radius: 50%;
+          animation: spin 0.8s linear
+            infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        .paymentInfo {
+          border-top: 1px solid #252525;
+          padding-top: 22px;
+        }
+
+        .paymentTitle {
           display: flex;
           align-items: center;
           justify-content: space-between;
-
           gap: 15px;
-          box-sizing: border-box;
         }
 
-        .order-summary > div {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
+        .paymentTitle h3 {
+          margin: 6px 0 0;
+          font-size: 18px;
         }
 
-        .summary-label {
-          color: #888;
-          font-size: 10px;
+        .coinBadge {
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #fff;
+          color: #000;
           font-weight: 800;
-          letter-spacing: 1.5px;
+          font-size: 12px;
         }
 
-        .order-summary strong {
-          color: #fff;
-          font-size: 24px;
-          font-weight: 900;
-        }
-
-        .order-number {
-          color: #999;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        /* ================================
-           COUNTDOWN ON PAYMENT CARD
-        ================================= */
-
-        .payment-countdown {
-          width: 100%;
-          margin: 18px 0;
-
-          padding: 16px;
-
-          box-sizing: border-box;
-
-          text-align: center;
-
-          border-radius: 15px;
-
-          background:
-            radial-gradient(
-              circle at center,
-              rgba(
-                255,
-                0,
-                38,
-                0.12
-              ),
-              #111
-            );
-
-          border: 1px solid
-            rgba(
-              255,
-              0,
-              38,
-              0.2
-            );
-        }
-
-        .payment-countdown span {
-          display: block;
-
-          color: #ff3150;
-
-          font-size: 8px;
-          font-weight: 900;
-
-          letter-spacing: 2px;
-        }
-
-        .payment-countdown strong {
-          display: block;
-
-          margin-top: 5px;
-
-          color: #fff;
-
-          font-size: 28px;
-          font-weight: 900;
-
-          letter-spacing: 2px;
-        }
-
-        .payment-countdown small {
-          display: block;
-
-          margin-top: 3px;
-
-          color: #777;
-
-          font-size: 9px;
-          font-weight: 700;
-        }
-
-        .payment-countdown.urgent {
-          border-color:
-            rgba(
-              255,
-              0,
-              38,
-              0.7
-            );
-
-          animation:
-            countdownUrgent
-            0.8s
-            ease-in-out
-            infinite alternate;
-        }
-
-        .payment-countdown.urgent strong {
-          color: #ff3150;
-        }
-
-        .payment-countdown.expired {
-          border-color:
-            rgba(
-              255,
-              0,
-              38,
-              0.4
-            );
-        }
-
-        .payment-countdown.expired strong {
-          color: #ff3150;
-        }
-
-        @keyframes countdownUrgent {
-          from {
-            box-shadow:
-              0 0 0
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.1
-                );
-          }
-
-          to {
-            box-shadow:
-              0 0 25px
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.3
-                );
-          }
-        }
-
-        /* ================================
-           ACTIONS
-        ================================= */
-
-        .actions {
-          width: 100%;
-          max-width: 520px;
-
-          margin: 20px auto 0;
-
+        .qrBox {
           display: flex;
-          flex-direction: column;
-
-          gap: 10px;
-        }
-
-        .invoice-button,
-        .navigation-button {
-          width: 100%;
-          min-height: 48px;
-
-          border-radius: 12px;
-
-          border: 1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.12
-            );
-
-          background: #171717;
-
-          color: #fff;
-
-          display: flex;
-          align-items: center;
           justify-content: center;
+          margin: 22px 0;
+        }
 
-          text-align: center;
-          text-decoration: none;
+        .qrBox img {
+          width: 190px;
+          height: 190px;
+          object-fit: contain;
+          background: #fff;
+          border-radius: 12px;
+          padding: 8px;
+        }
 
-          font-size: 13px;
+        .walletBox {
+          margin-top: 20px;
+        }
+
+        .walletRow {
+          margin-top: 8px;
+          display: flex;
+          align-items: stretch;
+          gap: 8px;
+        }
+
+        .walletAddress {
+          flex: 1;
+          min-width: 0;
+          padding: 13px;
+          border-radius: 10px;
+          background: #080808;
+          border: 1px solid #282828;
+          color: #ddd;
+          font-family: monospace;
+          font-size: 12px;
+          line-height: 1.5;
+          overflow-wrap: anywhere;
+        }
+
+        .copyButton {
+          border: 0;
+          background: #fff;
+          color: #000;
+          padding: 0 16px;
+          border-radius: 10px;
           font-weight: 800;
-
           cursor: pointer;
-
-          box-sizing: border-box;
         }
 
-        .invoice-button:hover,
-        .navigation-button:hover {
-          background: #202020;
-        }
-
-        .invoice-button:disabled {
-          opacity: 0.5;
+        .copyButton:disabled {
+          opacity: 0.4;
           cursor: not-allowed;
         }
 
-        /* ================================
-           NITRO OVERLAY
-        ================================= */
-
-        .status-overlay {
-          position: fixed;
-          inset: 0;
-          z-index: 9999;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          padding: 20px;
-
-          background:
-            radial-gradient(
-              circle at center,
-              rgba(
-                255,
-                0,
-                30,
-                0.13
-              ),
-              rgba(
-                0,
-                0,
-                0,
-                0.92
-              ) 55%
-            );
-
-          backdrop-filter:
-            blur(12px);
-
-          animation:
-            nitroOverlayIn
-            0.35s
-            ease-out;
-        }
-
-        @keyframes nitroOverlayIn {
-          from {
-            opacity: 0;
-          }
-
-          to {
-            opacity: 1;
-          }
-        }
-
-        /* ================================
-           NITRO CARD
-        ================================= */
-
-        .nitro-status-card {
-          position: relative;
-
-          width: 100%;
-          max-width: 390px;
-
-          overflow: hidden;
-
-          padding:
-            25px
-            22px
-            20px;
-
-          border-radius: 24px;
-
-          background:
-            radial-gradient(
-              circle at 50% -20%,
-              rgba(
-                255,
-                0,
-                30,
-                0.2
-              ),
-              transparent 42%
-            ),
-            #0b0b0d;
-
-          border: 1px solid
-            rgba(
-              255,
-              25,
-              50,
-              0.45
-            );
-
-          box-shadow:
-            0 0 0 1px
-              rgba(
-                255,
-                0,
-                30,
-                0.08
-              ),
-            0 0 30px
-              rgba(
-                255,
-                0,
-                30,
-                0.18
-              ),
-            0 25px 90px
-              rgba(
-                0,
-                0,
-                0,
-                0.75
-              );
-
-          animation:
-            nitroCardIn
-            0.55s
-            cubic-bezier(
-              0.175,
-              0.885,
-              0.32,
-              1.275
-            );
-
-          isolation: isolate;
-        }
-
-        @keyframes nitroCardIn {
-          from {
-            opacity: 0;
-
-            transform:
-              translateY(35px)
-              scale(0.82)
-              rotateX(8deg);
-          }
-
-          to {
-            opacity: 1;
-
-            transform:
-              translateY(0)
-              scale(1)
-              rotateX(0);
-          }
-        }
-
-        /* ================================
-           ANIMATED BORDER
-        ================================= */
-
-        .nitro-status-card::before {
-          content: "";
-
-          position: absolute;
-
-          inset: -2px;
-
-          border-radius: 25px;
-
-          background:
-            conic-gradient(
-              from 0deg,
-              transparent,
-              #ff0026,
-              transparent,
-              #ff1838,
-              transparent
-            );
-
-          animation:
-            nitroBorderSpin
-            3s
-            linear
-            infinite;
-
-          z-index: -2;
-        }
-
-        .nitro-status-card::after {
-          content: "";
-
-          position: absolute;
-
-          inset: 1px;
-
-          border-radius: 23px;
-
-          background: #0b0b0d;
-
-          z-index: -1;
-        }
-
-        @keyframes nitroBorderSpin {
-          to {
-            transform:
-              rotate(360deg);
-          }
-        }
-
-        /* ================================
-           MOVING GLOWS
-        ================================= */
-
-        .nitro-glow {
-          position: absolute;
-
-          width: 120px;
-          height: 120px;
-
-          border-radius: 50%;
-
-          filter: blur(35px);
-
-          opacity: 0.25;
-
-          pointer-events: none;
-        }
-
-        .glow-one {
-          background: #ff0026;
-
-          top: -70px;
-          left: -50px;
-
-          animation:
-            glowMoveOne
-            5s
-            ease-in-out
-            infinite
-            alternate;
-        }
-
-        .glow-two {
-          background: #ff1744;
-
-          right: -60px;
-          top: 40%;
-
-          animation:
-            glowMoveTwo
-            6s
-            ease-in-out
-            infinite
-            alternate;
-        }
-
-        .glow-three {
-          background: #ff0033;
-
-          bottom: -70px;
-          left: 40%;
-
-          animation:
-            glowMoveThree
-            4s
-            ease-in-out
-            infinite
-            alternate;
-        }
-
-        @keyframes glowMoveOne {
-          from {
-            transform:
-              translate(0, 0);
-          }
-
-          to {
-            transform:
-              translate(
-                80px,
-                70px
-              );
-          }
-        }
-
-        @keyframes glowMoveTwo {
-          from {
-            transform:
-              translate(0, 0);
-          }
-
-          to {
-            transform:
-              translate(
-                -70px,
-                -30px
-              );
-          }
-        }
-
-        @keyframes glowMoveThree {
-          from {
-            transform:
-              translate(0, 0);
-          }
-
-          to {
-            transform:
-              translate(
-                -40px,
-                -50px
-              );
-          }
-        }
-
-        /* ================================
-           PARTICLES
-        ================================= */
-
-        .nitro-particles {
-          position: absolute;
-
-          inset: 0;
-
-          pointer-events: none;
-
-          overflow: hidden;
-
-          z-index: 0;
-        }
-
-        .nitro-particles span {
-          position: absolute;
-
-          width: 4px;
-          height: 4px;
-
-          border-radius: 50%;
-
-          background: #ff1744;
-
-          box-shadow:
-            0 0 8px
-              rgba(
-                255,
-                23,
-                68,
-                0.9
-              );
-
-          animation:
-            particleFloat
-            4s
-            ease-in-out
-            infinite;
-        }
-
-        .nitro-particles
-          span:nth-child(1) {
-          left: 8%;
-          top: 70%;
-        }
-
-        .nitro-particles
-          span:nth-child(2) {
-          left: 18%;
-          top: 30%;
-          animation-delay:
-            0.7s;
-        }
-
-        .nitro-particles
-          span:nth-child(3) {
-          left: 32%;
-          top: 82%;
-          animation-delay:
-            1.1s;
-        }
-
-        .nitro-particles
-          span:nth-child(4) {
-          left: 74%;
-          top: 25%;
-          animation-delay:
-            1.5s;
-        }
-
-        .nitro-particles
-          span:nth-child(5) {
-          left: 88%;
-          top: 65%;
-          animation-delay:
-            0.4s;
-        }
-
-        .nitro-particles
-          span:nth-child(6) {
-          left: 65%;
-          top: 82%;
-          animation-delay:
-            2s;
-        }
-
-        .nitro-particles
-          span:nth-child(7) {
-          left: 48%;
-          top: 15%;
-          animation-delay:
-            1.7s;
-        }
-
-        .nitro-particles
-          span:nth-child(8) {
-          left: 93%;
-          top: 15%;
-          animation-delay:
-            2.4s;
-        }
-
-        @keyframes particleFloat {
-          0%,
-          100% {
-            opacity: 0.15;
-
-            transform:
-              translateY(10px)
-              scale(0.7);
-          }
-
-          50% {
-            opacity: 1;
-
-            transform:
-              translateY(-18px)
-              scale(1.3);
-          }
-        }
-
-        /* ================================
-           TOP
-        ================================= */
-
-        .nitro-status-top {
-          position: relative;
-
-          z-index: 2;
-
-          display: flex;
-
-          align-items: center;
-
-          justify-content: space-between;
-
-          margin-bottom: 24px;
-        }
-
-        .nitro-brand {
+        .copyButton.copied {
+          background: #1c8c55;
           color: #fff;
-
-          font-size: 11px;
-
-          font-weight: 900;
-
-          letter-spacing: 2px;
         }
 
-        .nitro-live {
-          padding:
-            5px
-            9px;
-
-          border-radius: 20px;
-
-          color: #ff3150;
-
-          background:
-            rgba(
-              255,
-              0,
-              38,
-              0.1
-            );
-
-          border: 1px solid
-            rgba(
-              255,
-              0,
-              38,
-              0.25
-            );
-
-          font-size: 8px;
-
-          font-weight: 900;
-
-          letter-spacing: 1.5px;
-        }
-
-        /* ================================
-           ICON
-        ================================= */
-
-        .nitro-icon-wrap {
-          position: relative;
-
-          z-index: 2;
-
-          width: 105px;
-          height: 105px;
-
-          margin:
-            0
-            auto
-            22px;
-
-          display: flex;
-
-          align-items: center;
-
-          justify-content: center;
-        }
-
-        .nitro-ring {
-          position: absolute;
-
-          inset: 0;
-
-          border-radius: 50%;
-
-          border: 1px solid
-            rgba(
-              255,
-              0,
-              38,
-              0.4
-            );
-        }
-
-        .ring-one {
-          animation:
-            nitroRingOne
-            2.5s
-            ease-out
-            infinite;
-        }
-
-        .ring-two {
-          inset: 9px;
-
-          border-color:
-            rgba(
-              255,
-              40,
-              65,
-              0.65
-            );
-
-          animation:
-            nitroRingTwo
-            2.5s
-            ease-out
-            infinite;
-        }
-
-        @keyframes nitroRingOne {
-          0% {
-            transform:
-              scale(0.75);
-
-            opacity: 0.9;
-          }
-
-          100% {
-            transform:
-              scale(1.25);
-
-            opacity: 0;
-          }
-        }
-
-        @keyframes nitroRingTwo {
-          0% {
-            transform:
-              scale(0.8);
-
-            opacity: 0.8;
-          }
-
-          100% {
-            transform:
-              scale(1.15);
-
-            opacity: 0;
-          }
-        }
-
-        .nitro-icon {
-          width: 65px;
-          height: 65px;
-
-          border-radius: 50%;
-
-          display: flex;
-
-          align-items: center;
-
-          justify-content: center;
-
-          color: #fff;
-
-          font-size: 30px;
-
-          font-weight: 900;
-
-          background:
-            radial-gradient(
-              circle at 35% 25%,
-              #ff435d,
-              #b9001d 60%,
-              #58000e
-            );
-
-          border: 1px solid
-            rgba(
-              255,
-              100,
-              115,
-              0.55
-            );
-
-          box-shadow:
-            0 0 20px
-              rgba(
-                255,
-                0,
-                38,
-                0.55
-              ),
-            inset 0 0 20px
-              rgba(
-                255,
-                255,
-                255,
-                0.08
-              );
-
-          animation:
-            nitroIconPulse
-            1.8s
-            ease-in-out
-            infinite;
-        }
-
-        @keyframes nitroIconPulse {
-          0%,
-          100% {
-            transform:
-              scale(1);
-
-            box-shadow:
-              0 0 20px
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.45
-                ),
-              inset 0 0 20px
-                rgba(
-                  255,
-                  255,
-                  255,
-                  0.08
-                );
-          }
-
-          50% {
-            transform:
-              scale(1.08);
-
-            box-shadow:
-              0 0 38px
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.75
-                ),
-              inset 0 0 20px
-                rgba(
-                  255,
-                  255,
-                  255,
-                  0.12
-                );
-          }
-        }
-
-        /* ================================
-           STATUS CONTENT
-        ================================= */
-
-        .nitro-status-content {
-          position: relative;
-
-          z-index: 2;
-
-          text-align: center;
-        }
-
-        .nitro-status-label {
-          color: #ff3150;
-
-          font-size: 9px;
-
-          font-weight: 900;
-
-          letter-spacing: 2px;
-        }
-
-        .nitro-status-content h2 {
-          margin:
-            8px
-            0
-            10px;
-
-          color: #fff;
-
-          font-size: 22px;
-
-          font-weight: 900;
-
-          letter-spacing:
-            -0.5px;
-        }
-
-        .nitro-status-content p {
-          margin: 0 auto;
-
-          max-width: 315px;
-
-          color: #999;
-
-          font-size: 12px;
-
-          line-height: 1.65;
-        }
-
-        /* ================================
-           BIG COUNTDOWN
-        ================================= */
-
-        .nitro-countdown {
-          position: relative;
-
-          z-index: 2;
-
-          margin:
-            22px
-            0
-            18px;
-
-          text-align: center;
-
-          padding:
-            15px
-            14px;
-
-          border-radius: 15px;
-
-          background:
-            rgba(
-              255,
-              0,
-              38,
-              0.06
-            );
-
-          border:
-            1px solid
-            rgba(
-              255,
-              0,
-              38,
-              0.2
-            );
-        }
-
-        .nitro-countdown span {
-          display: block;
-
-          color: #ff3150;
-
-          font-size: 8px;
-
-          font-weight: 900;
-
-          letter-spacing: 2px;
-        }
-
-        .nitro-countdown strong {
-          display: block;
-
-          margin-top: 5px;
-
-          color: #fff;
-
-          font-size: 35px;
-
-          font-weight: 900;
-
-          letter-spacing: 3px;
-
-          text-shadow:
-            0 0 20px
-              rgba(
-                255,
-                0,
-                38,
-                0.4
-              );
-        }
-
-        .nitro-countdown-line {
-          width: 100%;
-
-          height: 3px;
-
-          margin-top: 10px;
-
-          overflow: hidden;
-
+        .information {
+          margin-top: 16px;
+          padding: 14px;
           border-radius: 10px;
-
-          background:
-            rgba(
-              255,
-              255,
-              255,
-              0.08
-            );
+          background: #161616;
+          color: #aaa;
+          font-size: 13px;
+          line-height: 1.6;
+          white-space: pre-wrap;
         }
 
-        .nitro-countdown-line div {
-          height: 100%;
-
-          border-radius: 10px;
-
-          background:
-            linear-gradient(
-              90deg,
-              #8b0016,
-              #ff0026,
-              #ff6178
-            );
-
-          transition:
-            width
-            0.25s
-            linear;
-        }
-
-        /* ================================
-           EXPIRED
-        ================================= */
-
-        .nitro-expired-box {
-          position: relative;
-
-          z-index: 2;
-
-          margin:
-            22px
-            0
-            18px;
-
-          padding:
-            15px;
-
-          text-align: center;
-
-          border-radius: 15px;
-
-          background:
-            rgba(
-              255,
-              0,
-              38,
-              0.08
-            );
-
-          border:
-            1px solid
-            rgba(
-              255,
-              0,
-              38,
-              0.35
-            );
-        }
-
-        .nitro-expired-box span {
-          display: block;
-
-          color: #ff3150;
-
-          font-size: 8px;
-
-          font-weight: 900;
-
-          letter-spacing: 2px;
-        }
-
-        .nitro-expired-box strong {
-          display: block;
-
-          margin-top: 5px;
-
-          color: #ff3150;
-
-          font-size: 32px;
-
-          font-weight: 900;
-
-          letter-spacing: 3px;
-        }
-
-        /* ================================
-           BOTTOM
-        ================================= */
-
-        .nitro-status-bottom {
-          position: relative;
-
-          z-index: 2;
-
+        .warning {
+          margin-top: 14px;
+          padding: 13px;
           display: flex;
-
-          align-items: center;
-
-          justify-content: space-between;
-
-          padding-top: 16px;
-
-          border-top:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.07
-            );
+          gap: 10px;
+          border-radius: 10px;
+          background: #181818;
+          border: 1px solid #282828;
         }
 
-        .nitro-status-bottom span {
-          color: #666;
-
-          font-size: 9px;
-
-          font-weight: 800;
-
-          letter-spacing: 1px;
-        }
-
-        .nitro-status-bottom button {
-          border: 0;
-
-          background: transparent;
-
-          color: #ff3150;
-
-          font-size: 9px;
-
-          font-weight: 900;
-
-          letter-spacing: 1.2px;
-
-          cursor: pointer;
-        }
-
-        /* ================================
-           CONFIRMED
-        ================================= */
-
-        .status-overlay.confirmed
-          .nitro-icon {
-          background:
-            radial-gradient(
-              circle at 35% 25%,
-              #ff5c73,
-              #d40028 60%,
-              #65000f
-            );
-
-          animation:
-            confirmedPop
-            0.5s
-            ease-out;
-        }
-
-        @keyframes confirmedPop {
-          0% {
-            transform:
-              scale(0.5);
-          }
-
-          70% {
-            transform:
-              scale(1.15);
-          }
-
-          100% {
-            transform:
-              scale(1);
-          }
-        }
-
-        /* ================================
-           FAILED
-        ================================= */
-
-        .status-overlay.failed
-          .nitro-icon {
-          background:
-            radial-gradient(
-              circle at 35% 25%,
-              #8d1b2e,
-              #4d0713 65%,
-              #220107
-            );
-        }
-
-        /* ================================
-           EXPIRED
-        ================================= */
-
-        .status-overlay.timer-expired
-          .nitro-icon {
-          background:
-            radial-gradient(
-              circle at 35% 25%,
-              #8d1b2e,
-              #4d0713 65%,
-              #220107
-            );
-
-          animation:
-            expiredPulse
-            1s
-            ease-in-out
-            infinite
-            alternate;
-        }
-
-        @keyframes expiredPulse {
-          from {
-            box-shadow:
-              0 0 15px
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.3
-                );
-          }
-
-          to {
-            box-shadow:
-              0 0 35px
-                rgba(
-                  255,
-                  0,
-                  38,
-                  0.7
-                );
-          }
-        }
-
-        /* ================================
-           COPY FLOATING
-        ================================= */
-
-        .copy-floating {
-          position: fixed;
-
-          left: 50%;
-
-          bottom: 25px;
-
-          z-index: 9000;
-
-          transform:
-            translateX(-50%);
-
-          padding:
-            12px
-            18px;
-
-          border-radius: 30px;
-
+        .warningIcon {
+          width: 20px;
+          height: 20px;
+          flex: 0 0 20px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
           background: #fff;
-
           color: #000;
-
           font-size: 12px;
-
           font-weight: 900;
+        }
 
+        .warning p {
+          margin: 0;
+          color: #999;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .statusSection {
+          margin-top: 18px;
+          padding: 14px;
+          border: 1px solid #252525;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          gap: 11px;
+        }
+
+        .statusDot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #d7a82c;
           box-shadow:
-            0 10px 35px
-              rgba(
-                0,
-                0,
-                0,
-                0.35
-              );
+            0 0 0 5px
+              rgba(215, 168, 44, 0.1);
+        }
 
-          animation:
-            floatingIn
-            0.3s
+        .statusDot.confirmed {
+          background: #2bb673;
+          box-shadow:
+            0 0 0 5px
+              rgba(43, 182, 115, 0.1);
+        }
+
+        .statusDot.failed {
+          background: #e44;
+          box-shadow:
+            0 0 0 5px
+              rgba(238, 68, 68, 0.1);
+        }
+
+        .statusSection strong {
+          display: block;
+          font-size: 13px;
+        }
+
+        .statusSection span {
+          display: block;
+          color: #777;
+          font-size: 11px;
+          margin-top: 3px;
+        }
+
+        .liveButton {
+          margin-left: auto;
+          border: 1px solid #292929;
+          background: #151515;
+          color: #fff;
+          border-radius: 8px;
+          padding: 7px 10px;
+          font-size: 11px;
+          cursor: pointer;
+        }
+
+        .actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .invoiceButton,
+        .secondaryButton {
+          min-height: 48px;
+          border-radius: 11px;
+          display: grid;
+          place-items: center;
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .invoiceButton {
+          border: 1px solid #292929;
+          background: #151515;
+          color: #fff;
+        }
+
+        .invoiceButton:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        .secondaryButton {
+          background: #fff;
+          color: #000;
+        }
+
+        .footer {
+          text-align: center;
+          color: #555;
+          font-size: 11px;
+          margin: 25px 0 0;
+        }
+
+        .overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(
+            0,
+            0,
+            0,
+            0.82
+          );
+          backdrop-filter: blur(10px);
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          z-index: 50;
+        }
+
+        .statusModal {
+          width: min(
+            100%,
+            390px
+          );
+          background: #111;
+          border: 1px solid #303030;
+          border-radius: 22px;
+          padding: 30px;
+          text-align: center;
+          box-shadow:
+            0 30px 100px
+              rgba(0, 0, 0, 0.7);
+          animation: modalIn 0.25s
             ease-out;
         }
 
-        @keyframes floatingIn {
+        @keyframes modalIn {
           from {
             opacity: 0;
-
-            transform:
-              translateX(-50%)
-              translateY(15px);
+            transform: translateY(
+              12px
+            ) scale(0.97);
           }
 
           to {
             opacity: 1;
-
-            transform:
-              translateX(-50%)
-              translateY(0);
+            transform: translateY(
+              0
+            ) scale(1);
           }
         }
 
-        /* ================================
-           LIVE STATUS
-        ================================= */
-
-        .live-status {
-          position: fixed;
-
-          right: 16px;
-          bottom: 16px;
-
-          z-index: 8000;
-
-          border:
-            1px solid
-            rgba(
-              255,
-              255,
-              255,
-              0.12
-            );
-
-          border-radius: 30px;
-
-          padding:
-            11px
-            15px;
-
-          background: #111;
-
-          color: #fff;
-
-          font-size: 11px;
-
-          font-weight: 800;
-
-          display: flex;
-
-          align-items: center;
-
-          gap: 8px;
-
-          box-shadow:
-            0 10px 30px
-              rgba(
-                0,
-                0,
-                0,
-                0.4
-              );
-
-          cursor: pointer;
-        }
-
-        .live-dot {
-          width: 7px;
-          height: 7px;
-
+        .statusAnimation {
+          width: 76px;
+          height: 76px;
           border-radius: 50%;
-
-          background: #ff1744;
-
-          box-shadow:
-            0 0 8px
-              rgba(
-                255,
-                23,
-                68,
-                0.8
-              );
-
-          animation:
-            livePulse
-            1.5s
+          display: grid;
+          place-items: center;
+          margin: 0 auto 20px;
+          background: #292929;
+          color: #fff;
+          font-size: 36px;
+          font-weight: 900;
+          animation: pulse 1.4s
             infinite;
         }
 
-        @keyframes livePulse {
-          0%,
-          100% {
-            opacity: 1;
-          }
+        .statusAnimation.confirmed {
+          background: #1c8c55;
+        }
 
+        .statusAnimation.failed {
+          background: #a52e2e;
+        }
+
+        @keyframes pulse {
           50% {
-            opacity: 0.35;
+            transform: scale(1.05);
           }
         }
 
-        /* ================================
-           MOBILE
-        ================================= */
+        .statusModal h2 {
+          margin: 10px 0;
+          font-size: 25px;
+        }
 
-        @media (max-width: 480px) {
-          .order-summary {
-            margin-bottom: 16px;
+        .statusModal p {
+          color: #888;
+          line-height: 1.6;
+          font-size: 13px;
+          margin: 0 0 22px;
+        }
+
+        .closeButton {
+          width: 100%;
+          min-height: 46px;
+          border: 0;
+          border-radius: 10px;
+          background: #fff;
+          color: #000;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        @media (max-width: 520px) {
+          .page {
+            padding-left: 12px;
+            padding-right: 12px;
           }
 
-          .order-summary strong {
-            font-size: 21px;
+          .header {
+            padding-top: 15px;
           }
 
-          .order-number {
-            font-size: 10px;
+          .hero {
+            padding-top: 38px;
           }
 
-          .status-overlay {
-            padding: 16px;
+          .paymentCard {
+            padding: 15px;
+            border-radius: 18px;
           }
 
-          .nitro-status-card {
-            max-width: 360px;
-
-            padding:
-              22px
-              18px
-              18px;
+          .methodGrid {
+            grid-template-columns: repeat(
+              2,
+              1fr
+            );
           }
 
-          .nitro-status-content h2 {
-            font-size: 20px;
+          .walletRow {
+            flex-direction: column;
           }
 
-          .nitro-icon-wrap {
-            width: 95px;
-            height: 95px;
+          .copyButton {
+            min-height: 44px;
           }
 
-          .nitro-countdown strong {
-            font-size: 31px;
-          }
-
-          .live-status {
-            left: 50%;
-            right: auto;
-
-            transform:
-              translateX(-50%);
-
-            bottom: 12px;
-
-            white-space: nowrap;
+          .actions {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
