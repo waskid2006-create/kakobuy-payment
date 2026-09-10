@@ -157,7 +157,7 @@ export default function PaymentPage() {
 
   /* TIMER */
   const [timeLeft, setTimeLeft] =
-    useState(60)
+    useState(300)
 
   const [timerStarted, setTimerStarted] =
     useState(false)
