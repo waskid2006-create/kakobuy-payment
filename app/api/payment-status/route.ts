@@ -1,6 +1,10 @@
 import { sql } from "@/app/db"
 
-const VALID_STATUSES = ["pending", "confirmed", "failed"]
+const VALID_STATUSES = [
+  "pending",
+  "confirmed",
+  "failed",
+]
 
 export async function GET(request: Request) {
   try {
@@ -55,10 +59,16 @@ export async function GET(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error("Payment status GET error:", error)
+    console.error(
+      "Payment status GET error:",
+      error
+    )
 
     return Response.json(
-      { error: "Unable to get payment status." },
+      {
+        error:
+          "Unable to get payment status.",
+      },
       { status: 500 }
     )
   }
@@ -70,7 +80,8 @@ export async function POST(request: Request) {
 
     const orderId = body.orderId
     const email = body.email
-    const paymentMethod = body.paymentMethod
+    const paymentMethod =
+      body.paymentMethod
 
     if (!orderId) {
       return Response.json(
@@ -132,10 +143,16 @@ export async function POST(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error("Payment status POST error:", error)
+    console.error(
+      "Payment status POST error:",
+      error
+    )
 
     return Response.json(
-      { error: "Unable to update payment status." },
+      {
+        error:
+          "Unable to update payment status.",
+      },
       { status: 500 }
     )
   }
@@ -146,7 +163,9 @@ export async function PUT(request: Request) {
     const body = await request.json()
 
     const orderId = body.orderId
-    const status = String(body.status || "").toLowerCase()
+    const status = String(
+      body.status || ""
+    ).toLowerCase()
 
     if (!orderId) {
       return Response.json(
@@ -155,7 +174,9 @@ export async function PUT(request: Request) {
       )
     }
 
-    if (!VALID_STATUSES.includes(status)) {
+    if (
+      !VALID_STATUSES.includes(status)
+    ) {
       return Response.json(
         {
           error:
@@ -192,11 +213,17 @@ export async function PUT(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error("Payment status PUT error:", error)
+    console.error(
+      "Payment status PUT error:",
+      error
+    )
 
     return Response.json(
-      { error: "Unable to update payment status." },
+      {
+        error:
+          "Unable to update payment status.",
+      },
       { status: 500 }
     )
   }
-        }
+}
