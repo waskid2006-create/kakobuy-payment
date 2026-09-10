@@ -1073,100 +1073,706 @@ Please keep this invoice for your records.
           z-index: 9000;
           transform: translateX(-50%);
           padding: 12px 18px;
-          border-radius: 30px;
-          background: #fff;
-          color: #000;
-          font-size: 12px;
-          font-weight: 900;
-          box-shadow:
-            0 10px 35px
-              rgba(0, 0, 0, 0.35);
-          animation: floatingIn
-            0.3s ease-out;
-        }
+/* ================================
+   KAKOBUY NITRO-STYLE STATUS
+================================ */
 
-        @keyframes floatingIn {
-          from {
-            opacity: 0;
-            transform: translateX(-50%)
-              translateY(15px);
-          }
+.status-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
 
-          to {
-            opacity: 1;
-            transform: translateX(-50%)
-              translateY(0);
-          }
-        }
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-        .live-status {
-          position: fixed;
-          right: 16px;
-          bottom: 16px;
-          z-index: 8000;
-          border: 1px solid
-            rgba(255, 255, 255, 0.12);
-          border-radius: 30px;
-          padding: 11px 15px;
-          background: #111;
-          color: #fff;
-          font-size: 11px;
-          font-weight: 800;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          box-shadow:
-            0 10px 30px
-              rgba(0, 0, 0, 0.4);
-          cursor: pointer;
-        }
+  padding: 20px;
 
-        .live-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #fff;
-          animation: livePulse 1.5s
-            infinite;
-        }
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(255, 0, 30, 0.13),
+      rgba(0, 0, 0, 0.92) 55%
+    );
 
-        @keyframes livePulse {
-          0%,
-          100% {
-            opacity: 1;
-          }
+  backdrop-filter: blur(12px);
 
-          50% {
-            opacity: 0.35;
-          }
-        }
+  animation: nitroOverlayIn 0.35s ease-out;
+}
 
-        @media (max-width: 480px) {
-          .order-summary {
-            margin-bottom: 16px;
-          }
+@keyframes nitroOverlayIn {
+  from {
+    opacity: 0;
+  }
 
-          .order-summary strong {
-            font-size: 21px;
-          }
+  to {
+    opacity: 1;
+  }
+}
 
-          .order-number {
-            font-size: 10px;
-          }
+.nitro-status-card {
+  position: relative;
 
-          .status-card {
-            padding: 27px 18px;
-          }
+  width: 100%;
+  max-width: 390px;
 
-          .live-status {
-            left: 50%;
-            right: auto;
-            transform: translateX(-50%);
-            bottom: 12px;
-            white-space: nowrap;
-          }
-        }
-      `}</style>
-    </main>
-  )
+  overflow: hidden;
+
+  padding: 25px 22px 20px;
+
+  border-radius: 24px;
+
+  background:
+    radial-gradient(
+      circle at 50% -20%,
+      rgba(255, 0, 30, 0.2),
+      transparent 42%
+    ),
+    #0b0b0d;
+
+  border: 1px solid
+    rgba(255, 25, 50, 0.45);
+
+  box-shadow:
+    0 0 0 1px
+      rgba(255, 0, 30, 0.08),
+    0 0 30px
+      rgba(255, 0, 30, 0.18),
+    0 25px 90px
+      rgba(0, 0, 0, 0.75);
+
+  animation:
+    nitroCardIn
+    0.55s
+    cubic-bezier(
+      0.175,
+      0.885,
+      0.32,
+      1.275
+    );
+
+  isolation: isolate;
+}
+
+@keyframes nitroCardIn {
+  from {
+    opacity: 0;
+    transform:
+      translateY(35px)
+      scale(0.82)
+      rotateX(8deg);
+  }
+
+  to {
+    opacity: 1;
+    transform:
+      translateY(0)
+      scale(1)
+      rotateX(0);
+  }
+}
+
+/* Animated red border */
+
+.nitro-status-card::before {
+  content: "";
+
+  position: absolute;
+  inset: -2px;
+
+  border-radius: 25px;
+
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent,
+      #ff0026,
+      transparent,
+      #ff1838,
+      transparent
+    );
+
+  animation:
+    nitroBorderSpin
+    3s
+    linear
+    infinite;
+
+  z-index: -2;
+}
+
+.nitro-status-card::after {
+  content: "";
+
+  position: absolute;
+  inset: 1px;
+
+  border-radius: 23px;
+
+  background: #0b0b0d;
+
+  z-index: -1;
+}
+
+@keyframes nitroBorderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Red moving glow */
+
+.nitro-glow {
+  position: absolute;
+
+  width: 120px;
+  height: 120px;
+
+  border-radius: 50%;
+
+  filter: blur(35px);
+
+  opacity: 0.25;
+
+  pointer-events: none;
+}
+
+.glow-one {
+  background: #ff0026;
+
+  top: -70px;
+  left: -50px;
+
+  animation:
+    glowMoveOne
+    5s
+    ease-in-out
+    infinite alternate;
+}
+
+.glow-two {
+  background: #ff1744;
+
+  right: -60px;
+  top: 40%;
+
+  animation:
+    glowMoveTwo
+    6s
+    ease-in-out
+    infinite alternate;
+}
+
+.glow-three {
+  background: #ff0033;
+
+  bottom: -70px;
+  left: 40%;
+
+  animation:
+    glowMoveThree
+    4s
+    ease-in-out
+    infinite alternate;
+}
+
+@keyframes glowMoveOne {
+  from {
+    transform: translate(0, 0);
+  }
+
+  to {
+    transform: translate(80px, 70px);
+  }
+}
+
+@keyframes glowMoveTwo {
+  from {
+    transform: translate(0, 0);
+  }
+
+  to {
+    transform: translate(-70px, -30px);
+  }
+}
+
+@keyframes glowMoveThree {
+  from {
+    transform: translate(0, 0);
+  }
+
+  to {
+    transform: translate(-40px, -50px);
+  }
+}
+
+/* Floating particles */
+
+.nitro-particles {
+  position: absolute;
+  inset: 0;
+
+  pointer-events: none;
+
+  overflow: hidden;
+
+  z-index: 0;
+}
+
+.nitro-particles span {
+  position: absolute;
+
+  width: 4px;
+  height: 4px;
+
+  border-radius: 50%;
+
+  background: #ff1744;
+
+  box-shadow:
+    0 0 8px
+      rgba(255, 23, 68, 0.9);
+
+  animation:
+    particleFloat
+    4s
+    ease-in-out
+    infinite;
+}
+
+.nitro-particles span:nth-child(1) {
+  left: 8%;
+  top: 70%;
+}
+
+.nitro-particles span:nth-child(2) {
+  left: 18%;
+  top: 30%;
+  animation-delay: 0.7s;
+}
+
+.nitro-particles span:nth-child(3) {
+  left: 32%;
+  top: 82%;
+  animation-delay: 1.1s;
+}
+
+.nitro-particles span:nth-child(4) {
+  left: 74%;
+  top: 25%;
+  animation-delay: 1.5s;
+}
+
+.nitro-particles span:nth-child(5) {
+  left: 88%;
+  top: 65%;
+  animation-delay: 0.4s;
+}
+
+.nitro-particles span:nth-child(6) {
+  left: 65%;
+  top: 82%;
+  animation-delay: 2s;
+}
+
+.nitro-particles span:nth-child(7) {
+  left: 48%;
+  top: 15%;
+  animation-delay: 1.7s;
+}
+
+.nitro-particles span:nth-child(8) {
+  left: 93%;
+  top: 15%;
+  animation-delay: 2.4s;
+}
+
+@keyframes particleFloat {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform:
+      translateY(10px)
+      scale(0.7);
+  }
+
+  50% {
+    opacity: 1;
+    transform:
+      translateY(-18px)
+      scale(1.3);
+  }
+}
+
+/* Top */
+
+.nitro-status-top {
+  position: relative;
+  z-index: 2;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 24px;
+}
+
+.nitro-brand {
+  color: #fff;
+
+  font-size: 11px;
+  font-weight: 900;
+
+  letter-spacing: 2px;
+}
+
+.nitro-live {
+  padding: 5px 9px;
+
+  border-radius: 20px;
+
+  color: #ff3150;
+
+  background:
+    rgba(255, 0, 38, 0.1);
+
+  border: 1px solid
+    rgba(255, 0, 38, 0.25);
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.5px;
+}
+
+/* Icon */
+
+.nitro-icon-wrap {
+  position: relative;
+  z-index: 2;
+
+  width: 105px;
+  height: 105px;
+
+  margin: 0 auto 22px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nitro-ring {
+  position: absolute;
+
+  inset: 0;
+
+  border-radius: 50%;
+
+  border: 1px solid
+    rgba(255, 0, 38, 0.4);
+}
+
+.ring-one {
+  animation:
+    nitroRingOne
+    2.5s
+    ease-out
+    infinite;
+}
+
+.ring-two {
+  inset: 9px;
+
+  border-color:
+    rgba(255, 40, 65, 0.65);
+
+  animation:
+    nitroRingTwo
+    2.5s
+    ease-out
+    infinite;
+}
+
+@keyframes nitroRingOne {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+@keyframes nitroRingTwo {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+.nitro-icon {
+  width: 65px;
+  height: 65px;
+
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #fff;
+
+  font-size: 30px;
+  font-weight: 900;
+
+  background:
+    radial-gradient(
+      circle at 35% 25%,
+      #ff435d,
+      #b9001d 60%,
+      #58000e
+    );
+
+  border: 1px solid
+    rgba(255, 100, 115, 0.55);
+
+  box-shadow:
+    0 0 20px
+      rgba(255, 0, 38, 0.55),
+    inset 0 0 20px
+      rgba(255, 255, 255, 0.08);
+
+  animation:
+    nitroIconPulse
+    1.8s
+    ease-in-out
+    infinite;
+}
+
+@keyframes nitroIconPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 20px
+        rgba(255, 0, 38, 0.45),
+      inset 0 0 20px
+        rgba(255, 255, 255, 0.08);
+  }
+
+  50% {
+    transform: scale(1.08);
+
+    box-shadow:
+      0 0 38px
+        rgba(255, 0, 38, 0.75),
+      inset 0 0 20px
+        rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* Content */
+
+.nitro-status-content {
+  position: relative;
+  z-index: 2;
+
+  text-align: center;
+}
+
+.nitro-status-label {
+  color: #ff3150;
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 2px;
+}
+
+.nitro-status-content h2 {
+  margin: 8px 0 10px;
+
+  color: #fff;
+
+  font-size: 22px;
+  font-weight: 900;
+
+  letter-spacing: -0.5px;
+}
+
+.nitro-status-content p {
+  margin: 0 auto;
+
+  max-width: 315px;
+
+  color: #999;
+
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* Progress */
+
+.nitro-progress {
+  position: relative;
+  z-index: 2;
+
+  width: 100%;
+  height: 3px;
+
+  margin: 22px 0;
+
+  overflow: hidden;
+
+  border-radius: 10px;
+
+  background:
+    rgba(255, 255, 255, 0.08);
+}
+
+.nitro-progress-bar {
+  width: 40%;
+  height: 100%;
+
+  border-radius: 10px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #ff0026,
+      #ff5570
+    );
+
+  animation:
+    progressMove
+    1.5s
+    ease-in-out
+    infinite;
+}
+
+@keyframes progressMove {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+/* Bottom */
+
+.nitro-status-bottom {
+  position: relative;
+  z-index: 2;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding-top: 16px;
+
+  border-top: 1px solid
+    rgba(255, 255, 255, 0.07);
+}
+
+.nitro-status-bottom span {
+  color: #666;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  letter-spacing: 1px;
+}
+
+.nitro-status-bottom button {
+  border: 0;
+
+  background: transparent;
+
+  color: #ff3150;
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 1.2px;
+
+  cursor: pointer;
+}
+
+/* Confirmed */
+
+.status-overlay.confirmed
+  .nitro-icon {
+  background:
+    radial-gradient(
+      circle at 35% 25%,
+      #ff5c73,
+      #d40028 60%,
+      #65000f
+    );
+
+  animation:
+    confirmedPop
+    0.5s
+    ease-out;
+}
+
+@keyframes confirmedPop {
+  0% {
+    transform: scale(0.5);
+  }
+
+  70% {
+    transform: scale(1.15);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Failed */
+
+.status-overlay.failed
+  .nitro-icon {
+  background:
+    radial-gradient(
+      circle at 35% 25%,
+      #8d1b2e,
+      #4d0713 65%,
+      #220107
+    );
+}
+
+/* Mobile */
+
+@media (max-width: 480px) {
+  .status-overlay {
+    padding: 16px;
+  }
+
+  .nitro-status-card {
+    max-width: 360px;
+
+    padding:
+      22px 18px 18px;
+  }
+
+  .nitro-status-content h2 {
+    font-size: 20px;
+  }
+
+  .nitro-icon-wrap {
+    width: 95px;
+    height: 95px;
+  }
 }
