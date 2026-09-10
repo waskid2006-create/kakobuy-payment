@@ -333,12 +333,7 @@ export default function Home() {
 
     loadOrder()
   }, [])
-  
-  /*
- * Poll payment status.
- *
- * Admin changes are picked up automatically.
- */
+  // Poll payment status
 useEffect(() => {
   const details = getOrderDetails()
 
