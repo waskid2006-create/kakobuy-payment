@@ -785,162 +785,190 @@ export default function PaymentPage() {
     }
   }
 
-  /*
-   * SELECT + UPLOAD TRANSACTION SCREENSHOT
-   */
-  async function selectTransactionImage(
-    event: React.ChangeEvent<HTMLInputElement>
+  /* ==================== 17. SELECT + UPLOAD TRANSACTION SCREENSHOT ==================== */
+async function selectTransactionImage(
+  event: React.ChangeEvent<HTMLInputElement>
+) {
+  const file =
+    event.target.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  /* ==================== 18. CHECK FILE TYPE ==================== */
+  if (
+    ![
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ].includes(file.type)
   ) {
-    const file =
-      event.target.files?.[0]
-
-    if (!file) {
-      return
-    }
-
-    if (
-      ![
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ].includes(file.type)
-    ) {
-      setError(
-        "Only JPG, PNG, and WEBP images are allowed."
-      )
-
-      event.target.value = ""
-      return
-    }
-
-    if (
-      file.size >
-      5 * 1024 * 1024
-    ) {
-      setError(
-        "Image must be smaller than 5 MB."
-      )
-
-      event.target.value = ""
-      return
-    }
-
-    const details =
-      getOrderDetails()
-
-    if (!details?.orderId) {
-      setError(
-        "Order could not be identified."
-      )
-      return
-    }
-
-    setError("")
-    setTransactionFile(file)
-    setTransactionUploaded(false)
-
-    if (transactionPreview) {
-      URL.revokeObjectURL(
-        transactionPreview
-      )
-    }
-
-    const previewUrl =
-      URL.createObjectURL(file)
-
-    setTransactionPreview(
-      previewUrl
+    setError(
+      "Only JPG, PNG, and WEBP images are allowed."
     )
 
-    /*
-     * UPLOAD IMMEDIATELY
-     */
-    setUploadingTransaction(
+    event.target.value = ""
+    return
+  }
+
+  /* ==================== 19. CHECK FILE SIZE ==================== */
+  if (
+    file.size <= 0 ||
+    file.size > 5 * 1024 * 1024
+  ) {
+    setError(
+      "Image must be smaller than 5 MB."
+    )
+
+    event.target.value = ""
+    return
+  }
+
+  /* ==================== 20. GET ORDER ==================== */
+  const details =
+    getOrderDetails()
+
+  if (!details?.orderId) {
+    setError(
+      "Order could not be identified."
+    )
+    return
+  }
+
+  /* ==================== 21. RESET OLD STATE ==================== */
+  setError("")
+  setTransactionFile(file)
+  setTransactionUploaded(false)
+
+  if (transactionPreview) {
+    URL.revokeObjectURL(
+      transactionPreview
+    )
+  }
+
+  const previewUrl =
+    URL.createObjectURL(file)
+
+  setTransactionPreview(
+    previewUrl
+  )
+
+  /* ==================== 22. UPLOAD ==================== */
+  setUploadingTransaction(true)
+
+  try {
+    const formData =
+      new FormData()
+
+    formData.append(
+      "file",
+      file
+    )
+
+    formData.append(
+      "orderId",
+      details.orderId
+    )
+
+    if (details.email) {
+      formData.append(
+        "email",
+        details.email
+      )
+    }
+
+    const response =
+      await fetch(
+        "/api/transaction-upload",
+        {
+          method: "POST",
+          body: formData,
+          cache: "no-store",
+        }
+      )
+
+    let data: any = null
+
+    try {
+      data =
+        await response.json()
+    } catch {
+      data = null
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to upload screenshot."
+      )
+    }
+
+    /* ==================== 23. CONFIRM UPLOAD ==================== */
+    if (
+      !data?.success ||
+      !data?.image
+    ) {
+      throw new Error(
+        "The screenshot could not be saved."
+      )
+    }
+
+    setTransactionUploaded(
       true
     )
 
-    try {
-      const formData =
-        new FormData()
-
-      formData.append(
-        "file",
-        file
+    /* ==================== 24. SAVE SERVER ORDER ==================== */
+    if (data?.order) {
+      setOrder(
+        (previous) => ({
+          ...(previous || {}),
+          ...data.order,
+          transaction_image:
+            data.image,
+          transaction_submitted:
+            false,
+        })
       )
-
-      formData.append(
-        "orderId",
-        details.orderId
-      )
-
-      if (details.email) {
-        formData.append(
-          "email",
-          details.email
-        )
-      }
-
-      const response =
-        await fetch(
-          "/api/transaction-upload",
-          {
-            method: "POST",
-            body: formData,
-          }
-        )
-
-      const data =
-        await response.json()
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Unable to upload screenshot."
-        )
-      }
-
-      /*
-       * Upload is now confirmed.
-       *
-       * This enables CONFIRM.
-       */
-      setTransactionUploaded(
-        true
-      )
-
-      setOrder((previous) =>
-        previous
-          ? {
-              ...previous,
-              transaction_image:
-                data?.image ||
-                data?.transaction_image ||
-                previous.transaction_image ||
-                null,
-            }
-          : previous
-      )
-    } catch (err) {
-      console.error(
-        "Transaction upload error:",
-        err
-      )
-
-      setTransactionUploaded(
-        false
-      )
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to upload screenshot."
-      )
-    } finally {
-      setUploadingTransaction(
-        false
+    } else {
+      setOrder(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                transaction_image:
+                  data.image,
+                transaction_submitted:
+                  false,
+              }
+            : previous
       )
     }
+
+    setError("")
+  } catch (err) {
+    console.error(
+      "Transaction upload error:",
+      err
+    )
+
+    setTransactionUploaded(
+      false
+    )
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Unable to upload screenshot."
+    )
+  } finally {
+    setUploadingTransaction(
+      false
+    )
+
+    event.target.value = ""
   }
+}
 
   /*
    * CONFIRM PAYMENT SUBMISSION
@@ -1072,37 +1100,166 @@ export default function PaymentPage() {
       )
 
       setTransactionUploaded(
-        false
-      )
+/* ==================== 25. CONFIRM PAYMENT SUBMISSION ==================== */
+async function completePaymentSubmission() {
+  const details =
+    getOrderDetails()
 
-      setStatusVisible(
-        false
-      )
-
-      /*
-       * Refresh the order from the
-       * server so the admin/buyer state
-       * is synchronised.
-       */
-      await loadOrder()
-    } catch (err) {
-      console.error(
-        "Payment submission error:",
-        err
-      )
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to submit payment."
-      )
-    } finally {
-      setSubmittingTransaction(
-        false
-      )
-    }
+  /* ==================== 26. CHECK ORDER ==================== */
+  if (!details?.orderId) {
+    setError(
+      "Order could not be identified."
+    )
+    return
   }
 
+  /* ==================== 27. CHECK UPLOAD ==================== */
+  if (!transactionUploaded) {
+    setError(
+      "Upload your transaction screenshot first."
+    )
+    return
+  }
+
+  /* ==================== 28. PREVENT DOUBLE CLICK ==================== */
+  if (
+    uploadingTransaction ||
+    submittingTransaction
+  ) {
+    return
+  }
+
+  setSubmittingTransaction(
+    true
+  )
+
+  setError("")
+
+  try {
+    /* ==================== 29. SEND CONFIRMATION ==================== */
+    const response =
+      await fetch(
+        "/api/payment-submission",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          cache: "no-store",
+          body: JSON.stringify({
+            orderId:
+              details.orderId,
+            email:
+              details.email ||
+              undefined,
+          }),
+        }
+      )
+
+    let data: any = null
+
+    try {
+      data =
+        await response.json()
+    } catch {
+      data = null
+    }
+
+    /* ==================== 30. CHECK SERVER RESPONSE ==================== */
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to submit payment."
+      )
+    }
+
+    if (
+      !data?.success ||
+      !data?.submitted
+    ) {
+      throw new Error(
+        "Payment submission was not completed."
+      )
+    }
+
+    /* ==================== 31. UPDATE BUYER SCREEN ==================== */
+    if (data?.order) {
+      setOrder(
+        (previous) => ({
+          ...(previous || {}),
+          ...data.order,
+          transaction_submitted:
+            true,
+        })
+      )
+    } else {
+      setOrder(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                transaction_submitted:
+                  true,
+                transaction_submitted_at:
+                  new Date().toISOString(),
+              }
+            : previous
+      )
+    }
+
+    setPaymentStatus(
+      "pending"
+    )
+
+    /* ==================== 32. CLOSE SUBMISSION PANEL ==================== */
+    setPaymentPanelVisible(
+      false
+    )
+
+    setTransactionFile(
+      null
+    )
+
+    if (transactionPreview) {
+      URL.revokeObjectURL(
+        transactionPreview
+      )
+    }
+
+    setTransactionPreview(
+      ""
+    )
+
+    setTransactionUploaded(
+      false
+    )
+
+    setStatusVisible(
+      false
+    )
+
+    setError("")
+
+    /* ==================== 33. REFRESH ORDER ==================== */
+    await loadOrder()
+  } catch (err) {
+    console.error(
+      "Payment submission error:",
+      err
+    )
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Unable to submit payment."
+    )
+  } finally {
+    setSubmittingTransaction(
+      false
+    )
+  }
+}
   /*
    * DOWNLOAD INVOICE
    */
