@@ -333,59 +333,87 @@ export default function Home() {
 
     loadOrder()
   }, [])
+  
   /*
-   * Poll payment status.
-   *
-   * Admin changes are picked up automatically.
-   */
-  useEffect(() => {
-    const details = getOrderDetails()
+ * Poll payment status.
+ *
+ * Admin changes are picked up automatically.
+ */
+useEffect(() => {
+  const details = getOrderDetails()
 
-    if (!details || !details.orderId) {
-      return
+  if (!details || !details.orderId) {
+    return
+  }
+
+  const orderId = details.orderId
+  const email = details.email
+
+  let active = true
+
+  async function checkStatus() {
+    try {
+      const query = new URLSearchParams()
+
+      query.set("orderId", orderId)
+
+      if (email) {
+        query.set("email", email)
+      }
+
+      const response = await fetch(
+        `/api/payment-status?${query.toString()}`,
+        {
+          cache: "no-store",
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok || !data.order) {
+        return
+      }
+
+      if (!active) {
+        return
+      }
+
+      const newStatus: PaymentStatus =
+        data.order.payment_status || "pending"
+
+      setPaymentStatus(newStatus)
+
+      setOrder((previous) => ({
+        ...(previous || {}),
+        ...data.order,
+      }))
+
+      if (
+        newStatus === "confirmed" ||
+        newStatus === "failed"
+      ) {
+        setStatusVisible(true)
+      }
+    } catch (error) {
+      console.error(
+        "Payment status error:",
+        error
+      )
     }
+  }
 
-    const orderId = details.orderId
-    const email = details.email
+  checkStatus()
 
-    let active = true
+  const interval = window.setInterval(
+    checkStatus,
+    2000
+  )
 
-    async function checkStatus() {
-      try {
-        const query = new URLSearchParams()
-
-        query.set("orderId", orderId)
-
-        if (email) {
-          query.set("email", email)
-        }
-
-        const response = await fetch(
-          `/api/payment-status?${query.toString()}`,
-          {
-            cache: "no-store",
-          }
-        )
-
-        const data = await response.json()
-
-        if (!response.ok || !data.order) {
-          return
-        }
-
-        if (!active) {
-          return
-        }
-
-        const newStatus: PaymentStatus =
-          data.order.payment_status || "pending"
-
-        setPaymentStatus(newStatus)
-
-        setOrder((previous) => ({
-          ...(previous || {}),
-          ...data.order,
-        }))
+  return () => {
+    active = false
+    window.clearInterval(interval)
+  }
+}, [])
 
         /*
          * Automatically open the status animation
