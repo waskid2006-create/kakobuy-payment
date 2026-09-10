@@ -155,21 +155,14 @@ export default function PaymentPage() {
   const [error, setError] =
     useState("")
 
-  /*
-   * TIMER
-   *
-   * The timer is NOT started when the page opens.
-   * It starts only after COPY is pressed.
-   */
+  /* TIMER */
   const [timeLeft, setTimeLeft] =
     useState(60)
 
   const [timerStarted, setTimerStarted] =
     useState(false)
 
-  /*
-   * PAYMENT SUBMISSION
-   */
+  /* PAYMENT SUBMISSION */
   const [
     paymentPanelVisible,
     setPaymentPanelVisible,
@@ -341,15 +334,26 @@ export default function PaymentPage() {
   }, [loadOrder])
 
   /*
-   * RESTORE TIMER ONLY IF IT WAS ALREADY STARTED
+   * FIXED TIMER
    *
-   * It never starts automatically on a fresh order.
+   * This effect watches timerStarted.
+   *
+   * Therefore when COPY is pressed:
+   *
+   * setTimerStarted(true)
+   *
+   * causes this effect to immediately
+   * create the countdown interval.
    */
   useEffect(() => {
     const details =
       getOrderDetails()
 
     if (!details?.orderId) {
+      return
+    }
+
+    if (!timerStarted) {
       return
     }
 
@@ -379,64 +383,46 @@ export default function PaymentPage() {
       return
     }
 
-    const remaining =
-      Math.max(
-        0,
-        Math.ceil(
-          (expiresAt -
-            Date.now()) /
-            1000
+    const updateTimer = () => {
+      const next =
+        Math.max(
+          0,
+          Math.ceil(
+            (expiresAt -
+              Date.now()) /
+              1000
+          )
         )
-      )
 
-    if (remaining <= 0) {
-      sessionStorage.removeItem(
-        storageKey
-      )
-      setTimeLeft(0)
-      setTimerStarted(true)
-      return
+      setTimeLeft(next)
+
+      if (next <= 0) {
+        sessionStorage.removeItem(
+          storageKey
+        )
+      }
     }
 
-    setTimerStarted(true)
-    setTimeLeft(remaining)
+    updateTimer()
 
     const interval =
-      window.setInterval(() => {
-        const next =
-          Math.max(
-            0,
-            Math.ceil(
-              (expiresAt -
-                Date.now()) /
-                1000
-            )
-          )
-
-        setTimeLeft(next)
-
-        if (
-          next <= 0
-        ) {
-          window.clearInterval(
-            interval
-          )
-
-          sessionStorage.removeItem(
-            storageKey
-          )
-        }
-      }, 1000)
+      window.setInterval(
+        updateTimer,
+        250
+      )
 
     return () => {
       window.clearInterval(
         interval
       )
     }
-  }, [])
+  }, [
+    timerStarted,
+    orderDetails?.orderId,
+  ])
 
   /*
-   * BACKGROUND PAYMENT STATUS POLLING
+   * BACKGROUND PAYMENT STATUS
    */
   useEffect(() => {
     const details =
@@ -518,7 +504,6 @@ export default function PaymentPage() {
 
     return () => {
       active = false
-
       window.clearInterval(
         interval
       )
@@ -615,153 +600,148 @@ export default function PaymentPage() {
   /*
    * COPY WALLET
    *
-   * IMPORTANT:
-   * Timer begins ONLY here.
+   * COPY starts the timer immediately.
    */
   async function copyInfo() {
-  const wallet =
-    method?.wallet_address ||
-    method?.address ||
-    ""
+    const wallet =
+      method?.wallet_address ||
+      method?.address ||
+      ""
 
-  if (!wallet) {
-    setError(
-      "Wallet address is not available."
-    )
-    return
-  }
-
-  const details = getOrderDetails()
-
-  if (!details?.orderId) {
-    setError(
-      "Order could not be identified."
-    )
-    return
-  }
-
-  /*
-   * START THE 60-SECOND COUNTDOWN
-   * IMMEDIATELY WHEN COPY IS PRESSED.
-   */
-  const storageKey =
-    `kakobuy-payment-timer-${details.orderId}`
-
-  const expiresAt =
-    Date.now() + 60 * 1000
-
-  sessionStorage.setItem(
-    storageKey,
-    String(expiresAt)
-  )
-
-  setTimerStarted(true)
-  setTimeLeft(60)
-  setPaymentPanelVisible(true)
-  setError("")
-
-  /*
-   * Copy the wallet address.
-   * Clipboard is attempted separately so
-   * a browser clipboard problem cannot stop
-   * the countdown.
-   */
-  try {
-    if (
-      navigator.clipboard &&
-      window.isSecureContext
-    ) {
-      await navigator.clipboard.writeText(
-        wallet
+    if (!wallet) {
+      setError(
+        "Wallet address is not available."
       )
-    } else {
-      const textArea =
-        document.createElement(
-          "textarea"
-        )
-
-      textArea.value = wallet
-      textArea.style.position =
-        "fixed"
-      textArea.style.opacity = "0"
-      textArea.style.pointerEvents =
-        "none"
-
-      document.body.appendChild(
-        textArea
-      )
-
-      textArea.focus()
-      textArea.select()
-
-      document.execCommand("copy")
-
-      document.body.removeChild(
-        textArea
-      )
+      return
     }
 
-    setCopied(true)
+    const details =
+      getOrderDetails()
 
-    window.setTimeout(() => {
-      setCopied(false)
-    }, 2000)
-  } catch (err) {
-    console.error(
-      "Copy wallet error:",
-      err
+    if (!details?.orderId) {
+      setError(
+        "Order could not be identified."
+      )
+      return
+    }
+
+    const storageKey =
+      `kakobuy-payment-timer-${details.orderId}`
+
+    const expiresAt =
+      Date.now() + 60 * 1000
+
+    sessionStorage.setItem(
+      storageKey,
+      String(expiresAt)
     )
 
     /*
-     * The timer still continues even if
-     * clipboard access fails.
+     * IMPORTANT:
+     * These states are set BEFORE
+     * clipboard work.
      */
-    setError(
-      "Copy was not available, but the payment timer has started."
-    )
-  }
+    setTimerStarted(true)
+    setTimeLeft(60)
+    setPaymentPanelVisible(true)
+    setError("")
 
-  /*
-   * Tell the server that the wallet was copied.
-   */
-  try {
-    const response =
-      await fetch(
-        "/api/payment-status",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            orderId:
-              details.orderId,
-            email:
-              details.email ||
-              undefined,
-            wallet_copied: true,
-            paymentMethod:
-              selected,
-          }),
-        }
+    /*
+     * COPY WALLET
+     */
+    try {
+      if (
+        navigator.clipboard &&
+        window.isSecureContext
+      ) {
+        await navigator.clipboard.writeText(
+          wallet
+        )
+      } else {
+        const textArea =
+          document.createElement(
+            "textarea"
+          )
+
+        textArea.value = wallet
+        textArea.style.position =
+          "fixed"
+        textArea.style.opacity =
+          "0"
+        textArea.style.pointerEvents =
+          "none"
+
+        document.body.appendChild(
+          textArea
+        )
+
+        textArea.focus()
+        textArea.select()
+
+        document.execCommand("copy")
+
+        document.body.removeChild(
+          textArea
+        )
+      }
+
+      setCopied(true)
+
+      window.setTimeout(() => {
+        setCopied(false)
+      }, 2000)
+    } catch (err) {
+      console.error(
+        "Copy wallet error:",
+        err
       )
 
-    if (!response.ok) {
-      console.error(
-        "Could not save wallet copied status."
+      setError(
+        "Copy was not available, but the payment timer has started."
       )
     }
-  } catch (err) {
-    console.error(
-      "Wallet copied API error:",
-      err
-    )
+
+    /*
+     * SAVE WALLET-COPIED STATUS
+     */
+    try {
+      const response =
+        await fetch(
+          "/api/payment-status",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              orderId:
+                details.orderId,
+              email:
+                details.email ||
+                undefined,
+              wallet_copied: true,
+              paymentMethod:
+                selected,
+            }),
+          }
+        )
+
+      if (!response.ok) {
+        console.error(
+          "Could not save wallet copied status."
+        )
+      }
+    } catch (err) {
+      console.error(
+        "Wallet copied API error:",
+        err
+      )
+    }
   }
-}
 
   /*
-   * SELECT + AUTOMATICALLY UPLOAD SCREENSHOT
+   * SELECT + UPLOAD TRANSACTION SCREENSHOT
    */
   async function selectTransactionImage(
     event: React.ChangeEvent<HTMLInputElement>
@@ -874,18 +854,27 @@ export default function PaymentPage() {
         )
       }
 
+      /*
+       * Upload is now confirmed.
+       *
+       * This enables CONFIRM.
+       */
       setTransactionUploaded(
         true
       )
 
       setOrder((previous) =>
-  previous
-    ? {
-        ...previous,
-        transaction_image: data.image,
-      }
-    : previous
-)
+        previous
+          ? {
+              ...previous,
+              transaction_image:
+                data?.image ||
+                data?.transaction_image ||
+                previous.transaction_image ||
+                null,
+            }
+          : previous
+      )
     } catch (err) {
       console.error(
         "Transaction upload error:",
@@ -909,7 +898,10 @@ export default function PaymentPage() {
   }
 
   /*
-   * COMPLETED
+   * CONFIRM PAYMENT SUBMISSION
+   *
+   * This is the button that sends the
+   * completed submission to the server.
    */
   async function completePaymentSubmission() {
     const details =
@@ -922,10 +914,23 @@ export default function PaymentPage() {
       return
     }
 
-    if (!transactionUploaded) {
+    /*
+     * Do not allow CONFIRM until the
+     * screenshot has actually uploaded.
+     */
+    if (
+      !transactionUploaded
+    ) {
       setError(
         "Upload your transaction screenshot first."
       )
+      return
+    }
+
+    if (
+      uploadingTransaction ||
+      submittingTransaction
+    ) {
       return
     }
 
@@ -935,6 +940,10 @@ export default function PaymentPage() {
     setError("")
 
     try {
+      /*
+       * Tell the server that the
+       * transaction has been submitted.
+       */
       const response =
         await fetch(
           "/api/payment-submission",
@@ -950,12 +959,23 @@ export default function PaymentPage() {
               email:
                 details.email ||
                 undefined,
+              transaction_submitted:
+                true,
+              transaction_image:
+                order?.transaction_image ||
+                null,
             }),
           }
         )
 
-      const data =
-        await response.json()
+      let data: any = null
+
+      try {
+        data =
+          await response.json()
+      } catch {
+        data = null
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -964,6 +984,30 @@ export default function PaymentPage() {
         )
       }
 
+      /*
+       * Update buyer screen immediately.
+       */
+      setOrder((previous) =>
+        previous
+          ? {
+              ...previous,
+              transaction_submitted:
+                true,
+              transaction_submitted_at:
+                new Date().toISOString(),
+              payment_status:
+                "pending",
+            }
+          : previous
+      )
+
+      setPaymentStatus(
+        "pending"
+      )
+
+      /*
+       * Close submission panel.
+       */
       setPaymentPanelVisible(
         false
       )
@@ -986,25 +1030,16 @@ export default function PaymentPage() {
         false
       )
 
-      setOrder((previous) =>
-  previous
-    ? {
-        ...previous,
-        transaction_submitted: true,
-        transaction_submitted_at:
-          new Date().toISOString(),
-        payment_status: "pending",
-      }
-    : previous
-)
-
-      setPaymentStatus(
-        "pending"
-      )
-
       setStatusVisible(
         false
       )
+
+      /*
+       * Refresh the order from the
+       * server so the admin/buyer state
+       * is synchronised.
+       */
+      await loadOrder()
     } catch (err) {
       console.error(
         "Payment submission error:",
@@ -1025,8 +1060,6 @@ export default function PaymentPage() {
 
   /*
    * DOWNLOAD INVOICE
-   *
-   * Only available after confirmed/failed.
    */
   function downloadInvoice() {
     if (!order) {
@@ -1288,7 +1321,6 @@ body {
       <div className="backgroundGlow glowOne" />
       <div className="backgroundGlow glowTwo" />
 
-      {/* HEADER */}
       <header className="header">
         <a
           href={HOME_URL}
@@ -1312,7 +1344,6 @@ body {
       </header>
 
       <section className="container">
-        {/* HERO */}
         <div className="hero">
           <div className="eyebrow animatedText">
             SECURE PAYMENT
@@ -1333,7 +1364,6 @@ body {
           </div>
         )}
 
-        {/* ORDER AMOUNT */}
         {order && (
           <div className="orderCard">
             <div>
@@ -1360,7 +1390,6 @@ body {
           </div>
         )}
 
-        {/* PAYMENT CARD */}
         <div className="paymentCard">
           <div className="cardHeader">
             <div>
@@ -1522,7 +1551,6 @@ body {
                 </div>
               </div>
 
-              {/* CURRENT STATUS */}
               <div
                 className={`statusSection ${paymentStatus}`}
               >
@@ -1549,7 +1577,6 @@ body {
           )}
         </div>
 
-        {/* ACTIONS */}
         <div className="actions">
           <button
             type="button"
@@ -1585,19 +1612,10 @@ body {
         </p>
       </section>
 
-      {/* =====================================================
-          PAYMENT SUBMISSION FLOATING PANEL
-          
-          EXACTLY 3 CONTROLS:
-          1. X
-          2. UPLOAD IMAGE
-          3. COMPLETED
-
-          Selecting an image automatically uploads it.
-          ===================================================== */}
+      {/* PAYMENT SUBMISSION FLOATING PANEL */}
       {paymentPanelVisible && (
         <div className="paymentFloat">
-          {/* 1. CANCEL */}
+          {/* X — TOP RIGHT */}
           <button
             type="button"
             className="floatCancel"
@@ -1617,7 +1635,7 @@ body {
 
           <p className="floatText">
             Upload your transaction
-            screenshot to complete
+            screenshot and confirm
             your payment submission.
           </p>
 
@@ -1645,7 +1663,7 @@ body {
             }
           />
 
-          {/* 2. UPLOAD IMAGE */}
+          {/* UPLOAD IMAGE */}
           <label
             htmlFor="transaction-image"
             className={`uploadImageButton ${
@@ -1665,7 +1683,7 @@ body {
               : "UPLOAD IMAGE"}
           </label>
 
-          {/* 3. COMPLETED */}
+          {/* CONFIRM */}
           <button
             type="button"
             className="completedButton"
@@ -1680,14 +1698,14 @@ body {
           >
             {submittingTransaction
               ? "SUBMITTING..."
-              : "COMPLETED"}
+              : transactionUploaded
+              ? "CONFIRM"
+              : "UPLOAD IMAGE FIRST"}
           </button>
         </div>
       )}
 
-      {/* =====================================================
-          PAYMENT STATUS POPUP
-          ===================================================== */}
+      {/* PAYMENT STATUS POPUP */}
       {statusVisible && (
         <div
           className="overlay"
@@ -1934,21 +1952,6 @@ body {
           line-height: 1;
           letter-spacing: -0.055em;
           margin: 12px 0;
-          animation:
-            titleIn 0.8s
-            ease-out;
-        }
-
-        @keyframes titleIn {
-          from {
-            opacity: 0;
-            transform: translateY(15px);
-          }
-
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
         }
 
         .heroSubtitle {
@@ -1957,20 +1960,6 @@ body {
           margin: 0 auto;
           line-height: 1.6;
           font-size: 14px;
-          animation:
-            subtitlePulse 2.4s
-            ease-in-out infinite;
-        }
-
-        @keyframes subtitlePulse {
-          0%,
-          100% {
-            opacity: 0.65;
-          }
-
-          50% {
-            opacity: 1;
-          }
         }
 
         .errorBox {
@@ -2034,7 +2023,6 @@ body {
         .cardHeader h2 {
           margin: 7px 0 0;
           font-size: 22px;
-          letter-spacing: -0.03em;
         }
 
         .timer {
@@ -2046,14 +2034,13 @@ body {
           margin-top: 5px;
           color: #ff3844;
           font-size: 18px;
-          transition: 0.2s ease;
         }
 
-        .timer strong.timerDanger {
+        .timerDanger {
           animation:
             timerPulse 0.8s
             ease-in-out infinite;
-          color: #ff7078;
+          color: #ff7078 !important;
         }
 
         @keyframes timerPulse {
@@ -2090,28 +2077,12 @@ body {
           align-items: center;
           gap: 7px;
           font-size: 11px;
-          transition:
-            transform 0.2s ease,
-            border-color 0.2s ease,
-            background 0.2s ease;
-        }
-
-        .methodButton:hover {
-          transform: translateY(-2px);
-          border-color: #e50914;
         }
 
         .methodButton.active {
           background: #e50914;
           border-color: #ff3945;
           color: #fff;
-          box-shadow:
-            0 8px 25px rgba(
-              229,
-              9,
-              20,
-              0.25
-            );
         }
 
         .methodSymbol {
@@ -2173,13 +2144,6 @@ body {
           color: #fff;
           font-weight: 900;
           font-size: 12px;
-          box-shadow:
-            0 0 20px rgba(
-              229,
-              9,
-              20,
-              0.25
-            );
         }
 
         .qrBox {
@@ -2230,11 +2194,6 @@ body {
           border-radius: 10px;
           font-weight: 900;
           cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .copyButton:hover {
-          background: #ff2633;
         }
 
         .copyButton:disabled {
@@ -2297,7 +2256,6 @@ body {
           align-items: center;
           gap: 11px;
           background: #120b0c;
-          transition: 0.25s ease;
         }
 
         .statusSection.confirmed {
@@ -2315,51 +2273,14 @@ body {
           height: 10px;
           border-radius: 50%;
           background: #d7a82c;
-          box-shadow:
-            0 0 0 5px rgba(
-              215,
-              168,
-              44,
-              0.1
-            );
-          animation:
-            statusPulse 1.6s
-            ease-in-out infinite;
         }
 
         .statusDot.confirmed {
           background: #2bb673;
-          box-shadow:
-            0 0 0 5px rgba(
-              43,
-              182,
-              115,
-              0.1
-            );
         }
 
         .statusDot.failed {
           background: #e44;
-          box-shadow:
-            0 0 0 5px rgba(
-              238,
-              68,
-              68,
-              0.1
-            );
-        }
-
-        @keyframes statusPulse {
-          0%,
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-
-          50% {
-            transform: scale(1.25);
-            opacity: 0.65;
-          }
         }
 
         .statusSection strong {
@@ -2379,12 +2300,10 @@ body {
           color: #ff5260 !important;
           font-size: 9px !important;
           font-weight: 900;
-          letter-spacing: 0.08em;
         }
 
         .actions {
           display: grid;
-          grid-template-columns: 1fr;
           gap: 10px;
           margin-top: 14px;
         }
@@ -2398,50 +2317,23 @@ body {
           font-size: 13px;
           font-weight: 900;
           cursor: pointer;
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease;
         }
 
         .checkStatusButton {
           border: 1px solid #ff303c;
           background: #e50914;
           color: #fff;
-          box-shadow:
-            0 8px 30px rgba(
-              229,
-              9,
-              20,
-              0.2
-            );
-        }
-
-        .checkStatusButton:hover {
-          transform: translateY(-2px);
-          box-shadow:
-            0 12px 35px rgba(
-              229,
-              9,
-              20,
-              0.3
-            );
         }
 
         .checkStatusButton:disabled {
           opacity: 0.55;
           cursor: not-allowed;
-          transform: none;
         }
 
         .invoiceButton {
           border: 1px solid #383838;
           background: #171717;
           color: #fff;
-        }
-
-        .invoiceButton:hover {
-          border-color: #e50914;
-          color: #ff4b55;
         }
 
         .footer {
@@ -2480,31 +2372,15 @@ body {
               0.2
             );
           z-index: 40;
-          animation:
-            paymentFloatIn 0.35s
-            ease-out;
         }
 
-        @keyframes paymentFloatIn {
-          from {
-            opacity: 0;
-            transform:
-              translateY(25px)
-              scale(0.94);
-          }
-
-          to {
-            opacity: 1;
-            transform:
-              translateY(0)
-              scale(1);
-          }
-        }
-
+        /*
+         * X IS NOW TOP-RIGHT
+         */
         .floatCancel {
           position: absolute;
           top: 8px;
-          left: 8px;
+          right: 8px;
           width: 28px;
           height: 28px;
           border: 0;
@@ -2512,7 +2388,6 @@ body {
           background: #222;
           color: #fff;
           cursor: pointer;
-          transition: 0.2s ease;
         }
 
         .floatCancel:hover {
@@ -2558,21 +2433,12 @@ body {
           font-weight: 900;
           cursor: pointer;
           margin-top: 8px;
-          transition:
-            transform 0.2s ease,
-            background 0.2s ease,
-            border-color 0.2s ease;
         }
 
         .uploadImageButton {
           background: #1a1a1a;
           border: 1px solid #444;
           color: #fff;
-        }
-
-        .uploadImageButton:hover {
-          background: #242424;
-          border-color: #e50914;
         }
 
         .uploadImageButton.uploading {
@@ -2631,22 +2497,6 @@ body {
           border-radius: 24px;
           padding: 30px;
           text-align: center;
-          box-shadow:
-            0 30px 100px rgba(
-              0,
-              0,
-              0,
-              0.75
-            ),
-            0 0 50px rgba(
-              229,
-              9,
-              20,
-              0.08
-            );
-          animation:
-            modalIn 0.3s
-            ease-out;
         }
 
         .statusModal.confirmed {
@@ -2655,22 +2505,6 @@ body {
 
         .statusModal.failed {
           border-color: #7a252d;
-        }
-
-        @keyframes modalIn {
-          from {
-            opacity: 0;
-            transform:
-              translateY(25px)
-              scale(0.9);
-          }
-
-          to {
-            opacity: 1;
-            transform:
-              translateY(0)
-              scale(1);
-          }
         }
 
         .floatingIcon {
@@ -2687,22 +2521,6 @@ body {
               #780006
             );
           font-size: 37px;
-          animation:
-            floating 1.8s
-            ease-in-out infinite;
-          box-shadow:
-            0 0 0 8px rgba(
-              229,
-              9,
-              20,
-              0.08
-            ),
-            0 0 40px rgba(
-              229,
-              9,
-              20,
-              0.25
-            );
         }
 
         .statusModal.confirmed
@@ -2725,25 +2543,9 @@ body {
             );
         }
 
-        @keyframes floating {
-          0%,
-          100% {
-            transform:
-              translateY(0)
-              rotate(0deg);
-          }
-
-          50% {
-            transform:
-              translateY(-8px)
-              rotate(2deg);
-          }
-        }
-
         .statusModal h2 {
           margin: 10px 0;
           font-size: 25px;
-          letter-spacing: -0.03em;
         }
 
         .statusModal p {
@@ -2771,9 +2573,6 @@ body {
           height: 8px;
           border-radius: 50%;
           background: #d7a82c;
-          animation:
-            statusPulse 1.5s
-            ease-in-out infinite;
         }
 
         .modalDot.confirmed {
@@ -2841,10 +2640,6 @@ body {
 
           .copyButton {
             min-height: 44px;
-          }
-
-          .statusSection {
-            align-items: flex-start;
           }
 
           .statusBadge {
