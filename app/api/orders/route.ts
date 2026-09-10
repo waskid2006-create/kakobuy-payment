@@ -5,8 +5,13 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
 
-    const id = searchParams.get("id")
-    const email = searchParams.get("email")
+    // Accept either ?id=123 or ?orderId=123
+    const id =
+      searchParams.get("id") ||
+      searchParams.get("orderId")
+
+    const email =
+      searchParams.get("email")?.trim() || ""
 
     if (!id) {
       return NextResponse.json(
@@ -18,56 +23,82 @@ export async function GET(request: Request) {
       )
     }
 
-    const result = email
-      ? await sql`
-          SELECT
-            id,
-            full_name,
-            email,
-            phone,
-            country,
-            address,
-            city,
-            state,
-            items,
-            total,
-            payment_method,
-            payment_status,
-            wallet_copied,
-            wallet_copied_at,
-            transaction_image,
-            transaction_submitted,
-            transaction_submitted_at,
-            created_at
-          FROM orders
-          WHERE id = ${id}
-          AND email = ${email}
-          LIMIT 1
-        `
-      : await sql`
-          SELECT
-            id,
-            full_name,
-            email,
-            phone,
-            country,
-            address,
-            city,
-            state,
-            items,
-            total,
-            payment_method,
-            payment_status,
-            wallet_copied,
-            wallet_copied_at,
-            transaction_image,
-            transaction_submitted,
-            transaction_submitted_at,
-            created_at
-          FROM orders
-          WHERE id = ${id}
-          LIMIT 1
-        `
+    // Order IDs are numeric in the database.
+    const numericId = Number(id)
+
+    if (
+      !Number.isInteger(numericId) ||
+      numericId <= 0
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Invalid order ID.",
+        },
+        { status: 400 }
+      )
+    }
+
+    let result
+
+    /*
+     * If email is supplied, try the secure
+     * ID + email lookup first.
+     *
+     * If email is not supplied, use ID only.
+     */
+    if (email) {
+      result = await sql`
+        SELECT
+          id,
+          full_name,
+          email,
+          phone,
+          country,
+          address,
+          city,
+          state,
+          items,
+          total,
+          payment_method,
+          payment_status,
+          wallet_copied,
+          wallet_copied_at,
+          transaction_image,
+          transaction_submitted,
+          transaction_submitted_at,
+          created_at
+        FROM orders
+        WHERE id = ${numericId}
+          AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
+        LIMIT 1
+      `
+    } else {
+      result = await sql`
+        SELECT
+          id,
+          full_name,
+          email,
+          phone,
+          country,
+          address,
+          city,
+          state,
+          items,
+          total,
+          payment_method,
+          payment_status,
+          wallet_copied,
+          wallet_copied_at,
+          transaction_image,
+          transaction_submitted,
+          transaction_submitted_at,
+          created_at
+        FROM orders
+        WHERE id = ${numericId}
+        LIMIT 1
+      `
+    }
 
     if (result.length === 0) {
       return NextResponse.json(
@@ -84,7 +115,10 @@ export async function GET(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error("Order GET error:", error)
+    console.error(
+      "Order GET error:",
+      error
+    )
 
     return NextResponse.json(
       {
@@ -197,7 +231,10 @@ export async function POST(request: Request) {
       orderId: result[0].id,
     })
   } catch (error) {
-    console.error("Order API error:", error)
+    console.error(
+      "Order API error:",
+      error
+    )
 
     return NextResponse.json(
       {
