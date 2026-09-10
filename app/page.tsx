@@ -155,7 +155,7 @@ export default function PaymentPage() {
   const [error, setError] =
     useState("")
 
-  /* TIMER */
+  /* ==================== 1. TIMER SETTINGS ==================== */
   const [timeLeft, setTimeLeft] =
     useState(300)
 
@@ -333,18 +333,65 @@ export default function PaymentPage() {
     loadOrder()
   }, [loadOrder])
 
-  /*
-   * FIXED TIMER
-   *
-   * This effect watches timerStarted.
-   *
-   * Therefore when COPY is pressed:
-   *
-   * setTimerStarted(true)
-   *
-   * causes this effect to immediately
-   * create the countdown interval.
-   */
+  /* ==================== 2. RESUME TIMER AFTER REFRESH ==================== */
+  useEffect(() => {
+    const details =
+      getOrderDetails()
+
+    if (!details?.orderId) {
+      return
+    }
+
+    const storageKey =
+      `kakobuy-payment-timer-${details.orderId}`
+
+    const stored =
+      sessionStorage.getItem(
+        storageKey
+      )
+
+    if (!stored) {
+      return
+    }
+
+    const expiresAt =
+      Number(stored)
+
+    if (
+      !Number.isFinite(
+        expiresAt
+      )
+    ) {
+      sessionStorage.removeItem(
+        storageKey
+      )
+      return
+    }
+
+    const remaining =
+      Math.ceil(
+        (expiresAt - Date.now()) /
+          1000
+      )
+
+    if (remaining <= 0) {
+      sessionStorage.removeItem(
+        storageKey
+      )
+
+      window.location.href =
+        CHECK_ORDER_URL
+
+      return
+    }
+
+    setTimeLeft(remaining)
+    setTimerStarted(true)
+  }, [
+    orderDetails?.orderId,
+  ])
+
+  /* ==================== 3. 5-MINUTE COUNTDOWN ==================== */
   useEffect(() => {
     const details =
       getOrderDetails()
@@ -384,26 +431,26 @@ export default function PaymentPage() {
     }
 
     const updateTimer = () => {
-  const next =
-    Math.max(
-      0,
-      Math.ceil(
-        (expiresAt - Date.now()) /
-          1000
-      )
-    )
+      const next =
+        Math.max(
+          0,
+          Math.ceil(
+            (expiresAt - Date.now()) /
+              1000
+          )
+        )
 
-  setTimeLeft(next)
+      setTimeLeft(next)
 
-  if (next <= 0) {
-    sessionStorage.removeItem(
-      storageKey
-    )
+      if (next <= 0) {
+        sessionStorage.removeItem(
+          storageKey
+        )
 
-    window.location.href =
-      CHECK_ORDER_URL
-  }
-}
+        window.location.href =
+          CHECK_ORDER_URL
+      }
+    }
 
     updateTimer()
 
@@ -599,11 +646,7 @@ export default function PaymentPage() {
     }
   }
 
-  /*
-   * COPY WALLET
-   *
-   * COPY starts the timer immediately.
-   */
+  /* ==================== 4. START 5-MINUTE TIMER WHEN COPY IS PRESSED ==================== */
   async function copyInfo() {
     const wallet =
       method?.wallet_address ||
@@ -631,7 +674,7 @@ export default function PaymentPage() {
       `kakobuy-payment-timer-${details.orderId}`
 
     const expiresAt =
-      Date.now() + 60 * 1000
+      Date.now() + 5 * 60 * 1000
 
     sessionStorage.setItem(
       storageKey,
@@ -644,7 +687,7 @@ export default function PaymentPage() {
      * clipboard work.
      */
     setTimerStarted(true)
-    setTimeLeft(60)
+    setTimeLeft(300)
     setPaymentPanelVisible(true)
     setError("")
 
@@ -1409,6 +1452,7 @@ body {
                 TIME
               </span>
 
+              {/* ==================== 5. TIMER DISPLAY ==================== */}
               <strong
                 className={
                   timerStarted &&
@@ -1418,8 +1462,15 @@ body {
                 }
               >
                 {timerStarted
-                  ? `${timeLeft}s`
-                  : "60s"}
+                  ? `${Math.floor(
+                      timeLeft / 60
+                    )}:${String(
+                      timeLeft % 60
+                    ).padStart(
+                      2,
+                      "0"
+                    )}`
+                  : "5:00"}
               </strong>
             </div>
           </div>
