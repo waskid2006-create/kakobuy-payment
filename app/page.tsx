@@ -384,24 +384,26 @@ export default function PaymentPage() {
     }
 
     const updateTimer = () => {
-      const next =
-        Math.max(
-          0,
-          Math.ceil(
-            (expiresAt -
-              Date.now()) /
-              1000
-          )
-        )
+  const next =
+    Math.max(
+      0,
+      Math.ceil(
+        (expiresAt - Date.now()) /
+          1000
+      )
+    )
 
-      setTimeLeft(next)
+  setTimeLeft(next)
 
-      if (next <= 0) {
-        sessionStorage.removeItem(
-          storageKey
-        )
-      }
-    }
+  if (next <= 0) {
+    sessionStorage.removeItem(
+      storageKey
+    )
+
+    window.location.href =
+      CHECK_ORDER_URL
+  }
+}
 
     updateTimer()
 
