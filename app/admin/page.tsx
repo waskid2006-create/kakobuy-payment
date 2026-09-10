@@ -1,7 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import {
+  useEffect,
+  useState,
+} from "react"
+
 const methods = [
   {
     id: "bitcoin",
@@ -30,10 +33,40 @@ type PaymentStatus =
   | "confirmed"
   | "failed"
 
+type PaymentMethod = {
+  id?: string
+  name?: string
+  symbol?: string
+  information?: string
+  wallet_address?: string
+  address?: string
+  qr_image?: string | null
+  qr_image_url?: string | null
+  hero_title?: string
+  hero_heading?: string
+  hero_subtitle?: string
+  footer_text?: string
+}
+
 export default function AdminPage() {
-  const router = useRouter()
+  /* ==================== 1. BASIC ADMIN STATE ==================== */
+
   const [selected, setSelected] =
     useState("bitcoin")
+
+  const [loading, setLoading] =
+    useState(true)
+
+  const [saving, setSaving] =
+    useState(false)
+
+  const [saved, setSaved] =
+    useState(false)
+
+  const [error, setError] =
+    useState("")
+
+  /* ==================== 2. PAGE 3 EDITABLE CONTENT ==================== */
 
   const [information, setInformation] =
     useState("")
@@ -52,20 +85,15 @@ export default function AdminPage() {
   const [footerText, setFooterText] =
     useState("KAKOBUY")
 
+  /* ==================== 3. QR IMAGE STATE ==================== */
+
   const [qrPreview, setQrPreview] =
     useState("")
 
   const [qrFile, setQrFile] =
     useState<File | null>(null)
 
-  const [saved, setSaved] =
-    useState(false)
-
-  const [loading, setLoading] =
-    useState(true)
-
-  const [saving, setSaving] =
-    useState(false)
+  /* ==================== 4. PAYMENT STATUS STATE ==================== */
 
   const [orderId, setOrderId] =
     useState("")
@@ -83,11 +111,29 @@ export default function AdminPage() {
     (item) => item.id === selected
   )
 
+  /* ==================== 5. LOAD PAGE 3 SETTINGS ==================== */
+
   useEffect(() => {
+    let cancelled = false
+
     async function loadInformation() {
       setLoading(true)
       setSaved(false)
+      setError("")
       setQrFile(null)
+
+      /*
+       * Clear the old cryptocurrency data
+       * before loading the newly selected one.
+       */
+      setInformation("")
+      setWalletAddress("")
+      setHeroHeading("PAY WITH CRYPTO")
+      setHeroSubtitle(
+        "Secure and simple crypto payment"
+      )
+      setFooterText("KAKOBUY")
+      setQrPreview("")
 
       try {
         const response = await fetch(
@@ -95,25 +141,49 @@ export default function AdminPage() {
             selected
           )}`,
           {
+            method: "GET",
             cache: "no-store",
           }
         )
 
-        const data = await response.json()
+        const text =
+          await response.text()
+
+        let data: any = {}
+
+        try {
+          data = JSON.parse(text)
+        } catch {
+          throw new Error(
+            "Server returned an invalid response."
+          )
+        }
 
         if (!response.ok) {
           throw new Error(
             data?.error ||
-              "Unable to load payment method"
+              "Unable to load payment method."
           )
         }
 
         /*
-         * Your API returns the payment data
-         * inside data.paymentMethod.
+         * Your API returns:
+         *
+         * {
+         *   paymentMethod: {...}
+         * }
+         *
+         * But this also supports APIs that
+         * return the object directly.
          */
-        const paymentMethod =
-          data?.paymentMethod || data
+        const paymentMethod: PaymentMethod =
+          data?.paymentMethod ||
+          data?.method ||
+          data
+
+        if (cancelled) {
+          return
+        }
 
         setInformation(
           paymentMethod?.information || ""
@@ -146,27 +216,56 @@ export default function AdminPage() {
             paymentMethod?.qr_image_url ||
             ""
         )
-      } catch (error) {
+      } catch (err) {
         console.error(
           "Load payment method error:",
-          error
+          err
         )
 
-        setInformation("")
-        setWalletAddress("")
-        setHeroHeading("PAY WITH CRYPTO")
-        setHeroSubtitle(
-          "Secure and simple crypto payment"
-        )
-        setFooterText("KAKOBUY")
-        setQrPreview("")
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load payment method."
+          )
+
+          setInformation("")
+          setWalletAddress("")
+          setHeroHeading("PAY WITH CRYPTO")
+          setHeroSubtitle(
+            "Secure and simple crypto payment"
+          )
+          setFooterText("KAKOBUY")
+          setQrPreview("")
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     loadInformation()
+
+    return () => {
+      cancelled = true
+    }
   }, [selected])
+
+  /* ==================== 6. QR PREVIEW CLEANUP ==================== */
+
+  useEffect(() => {
+    return () => {
+      if (
+        qrPreview &&
+        qrPreview.startsWith("blob:")
+      ) {
+        URL.revokeObjectURL(qrPreview)
+      }
+    }
+  }, [qrPreview])
+
+  /* ==================== 7. LOAD ORDER STATUS ==================== */
 
   async function loadOrderStatus() {
     if (!orderId.trim()) {
@@ -180,11 +279,23 @@ export default function AdminPage() {
           orderId.trim()
         )}`,
         {
+          method: "GET",
           cache: "no-store",
         }
       )
 
-      const data = await response.json()
+      const text =
+        await response.text()
+
+      let data: any = {}
+
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Server returned an invalid response."
+        )
+      }
 
       if (!response.ok || !data.order) {
         throw new Error(
@@ -206,19 +317,21 @@ export default function AdminPage() {
       }
 
       setStatusSaved(false)
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Order status error:",
-        error
+        err
       )
 
       alert(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "Unable to load order status."
       )
     }
   }
+
+  /* ==================== 8. SAVE ORDER PAYMENT STATUS ==================== */
 
   async function savePaymentStatus() {
     if (statusSaving) return
@@ -247,8 +360,18 @@ export default function AdminPage() {
         }
       )
 
-      const data =
-        await response.json()
+      const text =
+        await response.text()
+
+      let data: any = {}
+
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Server returned an invalid response."
+        )
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -267,15 +390,15 @@ export default function AdminPage() {
       window.setTimeout(() => {
         setStatusSaved(false)
       }, 3000)
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Save payment status error:",
-        error
+        err
       )
 
       alert(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "Unable to save payment status."
       )
     } finally {
@@ -283,24 +406,31 @@ export default function AdminPage() {
     }
   }
 
+  /* ==================== 9. HANDLE QR IMAGE ==================== */
+
   function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
     const file =
       event.target.files?.[0]
 
-    if (!file) return
+    if (!file) {
+      return
+    }
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ]
 
     if (
-      ![
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ].includes(file.type)
+      !allowedTypes.includes(file.type)
     ) {
       alert(
         "QR image must be JPG, PNG, or WEBP."
       )
+
       event.target.value = ""
       return
     }
@@ -309,61 +439,100 @@ export default function AdminPage() {
       alert(
         "QR image must be smaller than 5 MB."
       )
+
       event.target.value = ""
       return
     }
 
-    setQrFile(file)
+    /*
+     * Remove the previous temporary
+     * browser preview if there was one.
+     */
+    if (
+      qrPreview &&
+      qrPreview.startsWith("blob:")
+    ) {
+      URL.revokeObjectURL(qrPreview)
+    }
 
     const previewUrl =
       URL.createObjectURL(file)
 
+    setQrFile(file)
     setQrPreview(previewUrl)
     setSaved(false)
+    setError("")
   }
 
+  /* ==================== 10. SAVE PAGE 3 CHANGES ==================== */
+
   async function saveChanges() {
-    if (saving) return
+    if (saving) {
+      return
+    }
 
     setSaving(true)
     setSaved(false)
+    setError("")
 
     try {
-      const formData = new FormData()
+      const formData =
+        new FormData()
 
+      /*
+       * Cryptocurrency being edited.
+       */
       formData.append(
         "id",
         selected
       )
 
+      /*
+       * Payment information shown
+       * on Page 3.
+       */
       formData.append(
         "information",
         information
       )
 
       /*
-       * THIS IS THE IMPORTANT NEW FIELD.
+       * Wallet address shown
+       * on Page 3.
        */
       formData.append(
         "wallet_address",
         walletAddress.trim()
       )
 
+      /*
+       * Page 3 hero heading.
+       */
       formData.append(
         "hero_heading",
         heroHeading
       )
 
+      /*
+       * Page 3 hero subtitle.
+       */
       formData.append(
         "hero_subtitle",
         heroSubtitle
       )
 
+      /*
+       * Page 3 footer.
+       */
       formData.append(
         "footer_text",
         footerText
       )
 
+      /*
+       * Only upload a QR image when
+       * the admin selected a new file.
+       */
       if (qrFile) {
         formData.append(
           "qr",
@@ -387,11 +556,10 @@ export default function AdminPage() {
       try {
         data = JSON.parse(text)
       } catch {
-        data = {
-          error:
-            text ||
-            "Server returned an invalid response.",
-        }
+        throw new Error(
+          text ||
+            "Server returned an invalid response."
+        )
       }
 
       if (!response.ok) {
@@ -402,8 +570,8 @@ export default function AdminPage() {
       }
 
       /*
-       * Keep the wallet value returned
-       * by the API.
+       * Keep the value returned by
+       * the server.
        */
       if (
         data?.wallet_address !==
@@ -414,10 +582,68 @@ export default function AdminPage() {
         )
       }
 
-      if (data?.qr_image_url) {
-        setQrPreview(
-          data.qr_image_url
+      if (
+        data?.hero_heading !==
+        undefined
+      ) {
+        setHeroHeading(
+          data.hero_heading || ""
         )
+      }
+
+      if (
+        data?.hero_title !==
+        undefined
+      ) {
+        setHeroHeading(
+          data.hero_title || ""
+        )
+      }
+
+      if (
+        data?.hero_subtitle !==
+        undefined
+      ) {
+        setHeroSubtitle(
+          data.hero_subtitle || ""
+        )
+      }
+
+      if (
+        data?.footer_text !==
+        undefined
+      ) {
+        setFooterText(
+          data.footer_text || ""
+        )
+      }
+
+      if (
+        data?.information !==
+        undefined
+      ) {
+        setInformation(
+          data.information || ""
+        )
+      }
+
+      /*
+       * If the API returns a new QR URL,
+       * use it immediately.
+       */
+      const newQrUrl =
+        data?.qr_image_url ||
+        data?.qr_image
+
+      if (newQrUrl) {
+        if (
+          qrPreview &&
+          qrPreview.startsWith("blob:")
+        ) {
+          URL.revokeObjectURL(qrPreview)
+        }
+
+        setQrPreview(newQrUrl)
       }
 
       setQrFile(null)
@@ -426,17 +652,20 @@ export default function AdminPage() {
       window.setTimeout(() => {
         setSaved(false)
       }, 3000)
-    } catch (error) {
+    } catch (err) {
       console.error(
-        "Save error:",
-        error
+        "Save payment settings error:",
+        err
       )
 
-      alert(
-        error instanceof Error
-          ? error.message
+      const message =
+        err instanceof Error
+          ? err.message
           : "Unable to save changes."
-      )
+
+      setError(message)
+
+      alert(message)
     } finally {
       setSaving(false)
     }
@@ -445,6 +674,8 @@ export default function AdminPage() {
   return (
     <main className="admin-page">
       <div className="admin-container">
+
+        {/* ==================== 11. ADMIN HEADER ==================== */}
 
         <header className="admin-header">
           <div>
@@ -461,11 +692,11 @@ export default function AdminPage() {
             href="/"
             className="back-button"
           >
-            View Page
+            VIEW PAGE
           </a>
         </header>
 
-        {/* ADMIN NAVIGATION */}
+        {/* ==================== 12. ADMIN NAVIGATION ==================== */}
 
         <nav className="admin-navigation">
           <a
@@ -490,7 +721,21 @@ export default function AdminPage() {
           </a>
         </nav>
 
-        {/* PAYMENT STATUS */}
+        {/* ==================== 13. ERROR MESSAGE ==================== */}
+
+        {error && (
+          <div className="error-box">
+            <strong>
+              ERROR
+            </strong>
+
+            <span>
+              {error}
+            </span>
+          </div>
+        )}
+
+        {/* ==================== 14. PAYMENT STATUS ==================== */}
 
         <section className="admin-card">
           <div className="admin-title">
@@ -656,7 +901,7 @@ export default function AdminPage() {
           </button>
         </section>
 
-        {/* PAYMENT METHODS */}
+        {/* ==================== 15. CRYPTOCURRENCY SELECTOR ==================== */}
 
         <section className="admin-card">
           <p className="admin-label">
@@ -668,10 +913,9 @@ export default function AdminPage() {
           </h2>
 
           <p className="admin-description">
-            Select a cryptocurrency to
-            edit its wallet address,
-            QR code and payment-page
-            information.
+            Select Bitcoin, Ethereum, TRON
+            or Binance to edit exactly
+            what appears on Page 3.
           </p>
 
           <div className="admin-methods">
@@ -689,6 +933,9 @@ export default function AdminPage() {
                     ? "admin-selected"
                     : ""
                 }`}
+                disabled={
+                  loading || saving
+                }
               >
                 <strong>
                   {item.symbol}
@@ -702,22 +949,28 @@ export default function AdminPage() {
           </div>
         </section>
 
-        {/* PAYMENT EDITOR */}
+        {/* ==================== 16. PAGE 3 EDITOR ==================== */}
 
         <section className="admin-card">
           <div className="admin-title">
             <div>
               <p className="admin-label">
-                EDITING
+                EDITING PAGE 3
               </p>
 
               <h2>
                 {current?.name}
               </h2>
             </div>
+
+            {loading && (
+              <span className="loading-text">
+                LOADING...
+              </span>
+            )}
           </div>
 
-          {/* WALLET ADDRESS */}
+          {/* ==================== 17. WALLET ADDRESS ==================== */}
 
           <label className="field-label">
             Wallet Address
@@ -741,13 +994,14 @@ export default function AdminPage() {
             />
 
             <p className="wallet-help">
-              This address will appear
-              on the buyer's Page 3
-              for {current?.name}.
+              This is the wallet address
+              the customer will see and
+              copy on Page 3 for{" "}
+              {current?.name}.
             </p>
           </div>
 
-          {/* HERO HEADING */}
+          {/* ==================== 18. HERO HEADING ==================== */}
 
           <label className="field-label">
             Hero Heading
@@ -767,7 +1021,7 @@ export default function AdminPage() {
             }
           />
 
-          {/* HERO SUBTITLE */}
+          {/* ==================== 19. HERO SUBTITLE ==================== */}
 
           <label className="field-label">
             Hero Subtitle
@@ -787,7 +1041,7 @@ export default function AdminPage() {
             }
           />
 
-          {/* FOOTER */}
+          {/* ==================== 20. FOOTER TEXT ==================== */}
 
           <label className="field-label">
             Footer Text
@@ -807,7 +1061,7 @@ export default function AdminPage() {
             }
           />
 
-          {/* INFORMATION */}
+          {/* ==================== 21. PAYMENT INFORMATION ==================== */}
 
           <label className="field-label">
             Payment Information
@@ -827,7 +1081,13 @@ export default function AdminPage() {
             }
           />
 
-          {/* QR */}
+          <p className="field-help">
+            This information will be
+            displayed on Page 3 for{" "}
+            {current?.name}.
+          </p>
+
+          {/* ==================== 22. QR CODE ==================== */}
 
           <label className="field-label">
             QR Code Image
@@ -857,7 +1117,8 @@ export default function AdminPage() {
           {qrPreview && (
             <div className="qr-preview">
               <p>
-                QR PREVIEW
+                QR PREVIEW —{" "}
+                {current?.name}
               </p>
 
               <img
@@ -867,7 +1128,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* SAVE */}
+          {/* ==================== 23. SAVE PAGE 3 ==================== */}
 
           <button
             onClick={saveChanges}
@@ -881,14 +1142,19 @@ export default function AdminPage() {
               ? "SAVING..."
               : saved
               ? "✓ SAVED SUCCESSFULLY"
-              : "SAVE CHANGES"}
+              : "SAVE PAGE 3 CHANGES"}
           </button>
         </section>
 
+        {/* ==================== 24. ADMIN FOOTER ==================== */}
+
         <p className="admin-footer">
-          KAKO<span>BUY</span> Admin Page 3
+          KAKO<span>BUY</span>{" "}
+          Admin Page 3
         </p>
       </div>
+
+      {/* ==================== 25. PAGE 3 ADMIN STYLES ==================== */}
 
       <style jsx>{`
         * {
@@ -900,7 +1166,12 @@ export default function AdminPage() {
           background:
             radial-gradient(
               circle at top left,
-              rgba(255, 48, 48, 0.12),
+              rgba(
+                255,
+                48,
+                48,
+                0.12
+              ),
               transparent 35%
             ),
             #080808;
@@ -994,6 +1265,37 @@ export default function AdminPage() {
           color: #fff;
         }
 
+        .error-box {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          background: rgba(
+            255,
+            48,
+            48,
+            0.08
+          );
+          border: 1px solid
+            rgba(
+              255,
+              48,
+              48,
+              0.35
+            );
+          color: #ff7777;
+          border-radius: 12px;
+          padding: 13px;
+          margin-bottom: 15px;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .error-box strong {
+          color: #ff3030;
+          font-size: 10px;
+          white-space: nowrap;
+        }
+
         .admin-card {
           background: #101010;
           border: 1px solid #292929;
@@ -1015,6 +1317,10 @@ export default function AdminPage() {
         }
 
         .admin-title {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 15px;
           margin-bottom: 18px;
         }
 
@@ -1035,6 +1341,19 @@ export default function AdminPage() {
           margin: 17px 0 8px;
         }
 
+        .field-help {
+          color: #666;
+          font-size: 10px;
+          line-height: 1.5;
+          margin: 7px 2px 0;
+        }
+
+        .loading-text {
+          color: #666;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
         .admin-input,
         .admin-textarea {
           width: 100%;
@@ -1048,6 +1367,11 @@ export default function AdminPage() {
           font-size: 13px;
         }
 
+        .admin-input::placeholder,
+        .admin-textarea::placeholder {
+          color: #555;
+        }
+
         .admin-input:focus,
         .admin-textarea:focus {
           border-color: #ff3030;
@@ -1059,6 +1383,12 @@ export default function AdminPage() {
                 48,
                 0.08
               );
+        }
+
+        .admin-input:disabled,
+        .admin-textarea:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .wallet-input {
@@ -1098,6 +1428,15 @@ export default function AdminPage() {
           font-weight: 700;
         }
 
+        .load-status-button:hover {
+          border-color: #ff3030;
+        }
+
+        .load-status-button:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
         .status-options {
           display: grid;
           gap: 9px;
@@ -1120,6 +1459,11 @@ export default function AdminPage() {
 
         .status-option:hover {
           border-color: #555;
+        }
+
+        .status-option:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .status-option.selected.pending {
@@ -1203,6 +1547,10 @@ export default function AdminPage() {
           cursor: pointer;
         }
 
+        .save-status-button:hover {
+          background: #ff4545;
+        }
+
         .save-status-button:disabled {
           opacity: 0.45;
           cursor: not-allowed;
@@ -1229,6 +1577,11 @@ export default function AdminPage() {
 
         .admin-method:hover {
           border-color: #555;
+        }
+
+        .admin-method:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
 
         .admin-method strong {
