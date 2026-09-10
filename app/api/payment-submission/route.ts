@@ -1,28 +1,93 @@
+/* ==================== 1. IMPORT DATABASE ==================== */
 import { sql } from "@/app/db"
 
-export async function POST(
-  request: Request
-) {
+/* ==================== 2. POST PAYMENT SUBMISSION ==================== */
+export async function POST(request: Request) {
   try {
-    const body =
-      await request.json()
+    /* ==================== 3. READ REQUEST ==================== */
+    const body = await request.json()
 
-    const orderId =
-      body.orderId
+    const orderId = String(
+      body?.orderId || ""
+    ).trim()
 
-    const email =
-      body.email
+    const email = String(
+      body?.email || ""
+    ).trim()
 
+    /* ==================== 4. CHECK ORDER ID ==================== */
     if (!orderId) {
       return Response.json(
         {
-          error:
-            "Missing order ID.",
+          success: false,
+          error: "Missing order ID.",
         },
         { status: 400 }
       )
     }
 
+    /* ==================== 5. FIND ORDER ==================== */
+    const existingOrder = email
+      ? await sql`
+          SELECT
+            id,
+            full_name,
+            email,
+            total,
+            payment_method,
+            payment_status,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at
+          FROM orders
+          WHERE id = ${orderId}
+          AND email = ${email}
+          LIMIT 1
+        `
+      : await sql`
+          SELECT
+            id,
+            full_name,
+            email,
+            total,
+            payment_method,
+            payment_status,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at
+          FROM orders
+          WHERE id = ${orderId}
+          LIMIT 1
+        `
+
+    /* ==================== 6. ORDER NOT FOUND ==================== */
+    if (existingOrder.length === 0) {
+      return Response.json(
+        {
+          success: false,
+          error: "Order not found.",
+        },
+        { status: 404 }
+      )
+    }
+
+    const currentOrder = existingOrder[0]
+
+    /* ==================== 7. CHECK SCREENSHOT ==================== */
+    if (
+      !currentOrder.transaction_image
+    ) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "Upload your transaction screenshot first.",
+        },
+        { status: 400 }
+      )
+    }
+
+    /* ==================== 8. MARK SUBMITTED ==================== */
     const result = email
       ? await sql`
           UPDATE orders
@@ -46,7 +111,9 @@ export async function POST(
             payment_status,
             transaction_image,
             transaction_submitted,
-            transaction_submitted_at
+            transaction_submitted_at,
+            created_at,
+            updated_at
         `
       : await sql`
           UPDATE orders
@@ -69,28 +136,33 @@ export async function POST(
             payment_status,
             transaction_image,
             transaction_submitted,
-            transaction_submitted_at
+            transaction_submitted_at,
+            created_at,
+            updated_at
         `
 
-    if (
-      result.length === 0
-    ) {
+    /* ==================== 9. CHECK UPDATE ==================== */
+    if (result.length === 0) {
       return Response.json(
         {
+          success: false,
           error:
-            "Upload your transaction screenshot first.",
+            "Unable to submit your payment.",
         },
-        { status: 400 }
+        { status: 500 }
       )
     }
 
+    /* ==================== 10. SUCCESS ==================== */
     return Response.json({
       success: true,
+      submitted: true,
       message:
-        "Payment submission received.",
+        "Payment submission received successfully.",
       order: result[0],
     })
   } catch (error) {
+    /* ==================== 11. ERROR ==================== */
     console.error(
       "Payment submission error:",
       error
@@ -98,8 +170,11 @@ export async function POST(
 
     return Response.json(
       {
+        success: false,
         error:
-          "Unable to submit payment.",
+          error instanceof Error
+            ? error.message
+            : "Unable to submit payment.",
       },
       { status: 500 }
     )
