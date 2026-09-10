@@ -1,8 +1,16 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 
-type PaymentStatus = "pending" | "confirmed" | "failed"
+type PaymentStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
 
 type PaymentMethod = {
   id?: string
@@ -33,6 +41,9 @@ type Order = {
   payment_status?: PaymentStatus
   wallet_copied?: boolean
   wallet_copied_at?: string | null
+  transaction_image?: string | null
+  transaction_submitted?: boolean
+  transaction_submitted_at?: string | null
   created_at?: string
 }
 
@@ -144,8 +155,47 @@ export default function PaymentPage() {
   const [error, setError] =
     useState("")
 
+  /*
+   * TIMER
+   */
   const [timeLeft, setTimeLeft] =
     useState(60)
+
+  const [timerStarted, setTimerStarted] =
+    useState(false)
+
+  /*
+   * PAYMENT SUBMISSION PANEL
+   */
+  const [
+    paymentPanelVisible,
+    setPaymentPanelVisible,
+  ] = useState(false)
+
+  const [
+    transactionFile,
+    setTransactionFile,
+  ] = useState<File | null>(null)
+
+  const [
+    transactionPreview,
+    setTransactionPreview,
+  ] = useState("")
+
+  const [
+    uploadingTransaction,
+    setUploadingTransaction,
+  ] = useState(false)
+
+  const [
+    transactionUploaded,
+    setTransactionUploaded,
+  ] = useState(false)
+
+  const [
+    submittingTransaction,
+    setSubmittingTransaction,
+  ] = useState(false)
 
   const orderDetails = useMemo(
     () => getOrderDetails(),
@@ -160,14 +210,15 @@ export default function PaymentPage() {
       setLoadingMethod(true)
 
       try {
-        const response = await fetch(
-          `/api/payment-methods?id=${encodeURIComponent(
-            selected
-          )}`,
-          {
-            cache: "no-store",
-          }
-        )
+        const response =
+          await fetch(
+            `/api/payment-methods?id=${encodeURIComponent(
+              selected
+            )}`,
+            {
+              cache: "no-store",
+            }
+          )
 
         const data =
           await response.json()
@@ -200,7 +251,7 @@ export default function PaymentPage() {
     }, [selected])
 
   /*
-   * LOAD ORDER
+   * LOAD ORDER AUTOMATICALLY
    */
   const loadOrder =
     useCallback(async () => {
@@ -215,22 +266,22 @@ export default function PaymentPage() {
         return
       }
 
-      const orderId =
-        details.orderId
-
-      const email =
-        details.email
-
       setLoadingOrder(true)
 
       try {
         const query =
           new URLSearchParams()
 
-        query.set("id", orderId)
+        query.set(
+          "id",
+          details.orderId
+        )
 
-        if (email) {
-          query.set("email", email)
+        if (details.email) {
+          query.set(
+            "email",
+            details.email
+          )
         }
 
         const response =
@@ -255,13 +306,14 @@ export default function PaymentPage() {
           data?.order || data
 
         if (loadedOrder) {
-          setOrder(loadedOrder)
+          setOrder(
+            loadedOrder
+          )
 
-          const status =
+          setPaymentStatus(
             loadedOrder.payment_status ||
-            "pending"
-
-          setPaymentStatus(status)
+              "pending"
+          )
         }
       } catch (err) {
         console.error(
@@ -286,27 +338,15 @@ export default function PaymentPage() {
   }, [loadOrder])
 
   /*
-   * SILENT STATUS POLLING
-   *
-   * This updates the status in the background.
-   * It DOES NOT automatically open the popup.
+   * BACKGROUND STATUS POLLING
    */
   useEffect(() => {
     const details =
       getOrderDetails()
 
-    if (
-      !details ||
-      !details.orderId
-    ) {
+    if (!details?.orderId) {
       return
     }
-
-    const orderId =
-      details.orderId
-
-    const email =
-      details.email
 
     let active = true
 
@@ -318,13 +358,13 @@ export default function PaymentPage() {
 
           query.set(
             "orderId",
-            orderId
+            details.orderId
           )
 
-          if (email) {
+          if (details.email) {
             query.set(
               "email",
-              email
+              details.email
             )
           }
 
@@ -347,10 +387,10 @@ export default function PaymentPage() {
             return
           }
 
-          const newStatus: PaymentStatus =
-            data.order
+          const newStatus =
+            (data.order
               .payment_status ||
-            "pending"
+              "pending") as PaymentStatus
 
           setPaymentStatus(
             newStatus
@@ -364,7 +404,7 @@ export default function PaymentPage() {
           )
         } catch (err) {
           console.error(
-            "Background payment status error:",
+            "Background status error:",
             err
           )
         }
@@ -387,21 +427,15 @@ export default function PaymentPage() {
   }, [])
 
   /*
-   * CHECK PAYMENT STATUS BUTTON
-   *
-   * This is the action that opens
-   * the animated status popup.
+   * CHECK PAYMENT STATUS
    */
   async function checkPaymentStatus() {
     const details =
       getOrderDetails()
 
-    if (
-      !details ||
-      !details.orderId
-    ) {
+    if (!details?.orderId) {
       setError(
-        "No order ID was found."
+        "No order was found."
       )
       return
     }
@@ -446,10 +480,10 @@ export default function PaymentPage() {
         )
       }
 
-      const newStatus: PaymentStatus =
-        data.order
+      const newStatus =
+        (data.order
           .payment_status ||
-        "pending"
+          "pending") as PaymentStatus
 
       setPaymentStatus(
         newStatus
@@ -462,14 +496,10 @@ export default function PaymentPage() {
         })
       )
 
-      /*
-       * Open the animation ONLY
-       * after the buyer presses the button.
-       */
       setStatusVisible(true)
     } catch (err) {
       console.error(
-        "Check payment status error:",
+        "Check status error:",
         err
       )
 
@@ -484,77 +514,9 @@ export default function PaymentPage() {
   }
 
   /*
-   * TIMER
-   */
-  useEffect(() => {
-    if (
-      !orderDetails?.orderId
-    ) {
-      return
-    }
-
-    const storageKey =
-      `kakobuy-payment-timer-${orderDetails.orderId}`
-
-    const now =
-      Date.now()
-
-    let expiresAt =
-      Number(
-        sessionStorage.getItem(
-          storageKey
-        )
-      ) || 0
-
-    if (
-      !expiresAt ||
-      expiresAt <= now
-    ) {
-      expiresAt =
-        now + 60 * 1000
-
-      sessionStorage.setItem(
-        storageKey,
-        String(expiresAt)
-      )
-    }
-
-    const updateTimer =
-      () => {
-        const remaining =
-          Math.max(
-            0,
-            Math.ceil(
-              (expiresAt -
-                Date.now()) /
-                1000
-            )
-          )
-
-        setTimeLeft(
-          remaining
-        )
-      }
-
-    updateTimer()
-
-    const timer =
-      window.setInterval(
-        updateTimer,
-        1000
-      )
-
-    return () => {
-      window.clearInterval(
-        timer
-      )
-    }
-  }, [
-    orderDetails?.orderId,
-  ])
-
-  /*
    * COPY WALLET
+   *
+   * TIMER STARTS HERE.
    */
   async function copyInfo() {
     const wallet =
@@ -611,6 +573,65 @@ export default function PaymentPage() {
           "Could not save wallet copied status."
         )
       }
+
+      /*
+       * START TIMER ONLY AFTER COPY
+       */
+      if (!timerStarted) {
+        const storageKey =
+          `kakobuy-payment-timer-${details.orderId}`
+
+        const expiresAt =
+          Date.now() + 60 * 1000
+
+        sessionStorage.setItem(
+          storageKey,
+          String(expiresAt)
+        )
+
+        setTimerStarted(true)
+        setTimeLeft(60)
+
+        /*
+         * SHOW SUBMISSION PANEL
+         */
+        setPaymentPanelVisible(
+          true
+        )
+
+        const updateTimer =
+          () => {
+            const remaining =
+              Math.max(
+                0,
+                Math.ceil(
+                  (expiresAt -
+                    Date.now()) /
+                    1000
+                )
+              )
+
+            setTimeLeft(
+              remaining
+            )
+          }
+
+        updateTimer()
+
+        const timer =
+          window.setInterval(() => {
+            updateTimer()
+
+            if (
+              Date.now() >=
+              expiresAt
+            ) {
+              window.clearInterval(
+                timer
+              )
+            }
+          }, 1000)
+      }
     } catch (err) {
       console.error(
         "Copy wallet error:",
@@ -620,10 +641,242 @@ export default function PaymentPage() {
   }
 
   /*
+   * SELECT SCREENSHOT
+   */
+  function selectTransactionImage(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file =
+      event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    if (
+      !file.type.startsWith(
+        "image/"
+      )
+    ) {
+      setError(
+        "Please select an image."
+      )
+      return
+    }
+
+    if (
+      file.size >
+      5 * 1024 * 1024
+    ) {
+      setError(
+        "Image must be smaller than 5 MB."
+      )
+      return
+    }
+
+    setError("")
+    setTransactionFile(file)
+    setTransactionUploaded(
+      false
+    )
+
+    if (
+      transactionPreview
+    ) {
+      URL.revokeObjectURL(
+        transactionPreview
+      )
+    }
+
+    setTransactionPreview(
+      URL.createObjectURL(
+        file
+      )
+    )
+  }
+
+  /*
+   * UPLOAD SCREENSHOT
+   */
+  async function uploadTransactionImage() {
+    const details =
+      getOrderDetails()
+
+    if (!details?.orderId) {
+      setError(
+        "Order could not be identified."
+      )
+      return
+    }
+
+    if (!transactionFile) {
+      setError(
+        "Please select your transaction screenshot."
+      )
+      return
+    }
+
+    setUploadingTransaction(
+      true
+    )
+    setError("")
+
+    try {
+      const formData =
+        new FormData()
+
+      formData.append(
+        "file",
+        transactionFile
+      )
+
+      formData.append(
+        "orderId",
+        details.orderId
+      )
+
+      if (details.email) {
+        formData.append(
+          "email",
+          details.email
+        )
+      }
+
+      const response =
+        await fetch(
+          "/api/transaction-upload",
+          {
+            method: "POST",
+            body: formData,
+          }
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to upload screenshot."
+        )
+      }
+
+      setTransactionUploaded(
+        true
+      )
+    } catch (err) {
+      console.error(
+        "Transaction upload error:",
+        err
+      )
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to upload screenshot."
+      )
+    } finally {
+      setUploadingTransaction(
+        false
+      )
+    }
+  }
+
+  /*
+   * COMPLETED
+   */
+  async function completePaymentSubmission() {
+    const details =
+      getOrderDetails()
+
+    if (!details?.orderId) {
+      setError(
+        "Order could not be identified."
+      )
+      return
+    }
+
+    if (!transactionUploaded) {
+      setError(
+        "Upload your transaction screenshot first."
+      )
+      return
+    }
+
+    setSubmittingTransaction(
+      true
+    )
+    setError("")
+
+    try {
+      const response =
+        await fetch(
+          "/api/payment-submission",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              orderId:
+                details.orderId,
+              email:
+                details.email ||
+                undefined,
+            }),
+          }
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to submit payment."
+        )
+      }
+
+      setPaymentPanelVisible(
+        false
+      )
+
+      setTransactionFile(
+        null
+      )
+
+      if (
+        transactionPreview
+      ) {
+        URL.revokeObjectURL(
+          transactionPreview
+        )
+      }
+
+      setTransactionPreview(
+        ""
+      )
+    } catch (err) {
+      console.error(
+        "Payment submission error:",
+        err
+      )
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to submit payment."
+      )
+    } finally {
+      setSubmittingTransaction(
+        false
+      )
+    }
+  }
+
+  /*
    * DOWNLOAD INVOICE
-   *
-   * Invoice is available only when
-   * payment is confirmed or failed.
    */
   function downloadInvoice() {
     if (!order) {
@@ -678,6 +931,7 @@ body {
 .row {
   display: flex;
   justify-content: space-between;
+  gap: 20px;
   border-bottom: 1px solid #eee;
   padding: 12px 0;
 }
@@ -936,7 +1190,7 @@ body {
 
             <div className="orderTotal">
               <span className="smallLabel">
-                TOTAL
+                AMOUNT TO PAY
               </span>
 
               <strong>
@@ -966,7 +1220,9 @@ body {
               </span>
 
               <strong>
-                {timeLeft}s
+                {timerStarted
+                  ? `${timeLeft}s`
+                  : "60s"}
               </strong>
             </div>
           </div>
@@ -1041,7 +1297,7 @@ body {
                       src={
                         method.qr_image
                       }
-                      alt={`${selectedName} QR code`}
+                      alt="Payment QR"
                     />
                   </div>
                 )}
@@ -1072,8 +1328,8 @@ body {
                       }
                     >
                       {copied
-                        ? "Copied"
-                        : "Copy"}
+                        ? "COPIED"
+                        : "COPY"}
                     </button>
                   </div>
                 </div>
@@ -1104,9 +1360,7 @@ body {
                 className={`statusSection ${paymentStatus}`}
               >
                 <div
-                  className={`statusDot ${
-                    paymentStatus
-                  }`}
+                  className={`statusDot ${paymentStatus}`}
                 />
 
                 <div>
@@ -1163,6 +1417,97 @@ body {
         </p>
       </section>
 
+      {/* PAYMENT SUBMISSION FLOATING PANEL */}
+      {paymentPanelVisible && (
+        <div className="paymentFloat">
+          <button
+            type="button"
+            className="floatCancel"
+            onClick={() =>
+              setPaymentPanelVisible(
+                false
+              )
+            }
+          >
+            ✕
+          </button>
+
+          <div className="floatTitle">
+            PAYMENT SUBMISSION
+          </div>
+
+          <p className="floatText">
+            Upload your transaction
+            screenshot and complete
+            your payment submission.
+          </p>
+
+          {transactionPreview && (
+            <img
+              src={
+                transactionPreview
+              }
+              alt="Transaction screenshot"
+              className="transactionPreview"
+            />
+          )}
+
+          <input
+            id="transaction-image"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={
+              selectTransactionImage
+            }
+          />
+
+          <label
+            htmlFor="transaction-image"
+            className="uploadImageButton"
+          >
+            {transactionFile
+              ? "CHANGE IMAGE"
+              : "UPLOAD IMAGE"}
+          </label>
+
+          {transactionFile &&
+            !transactionUploaded && (
+              <button
+                type="button"
+                className="saveImageButton"
+                onClick={
+                  uploadTransactionImage
+                }
+                disabled={
+                  uploadingTransaction
+                }
+              >
+                {uploadingTransaction
+                  ? "UPLOADING..."
+                  : "SAVE IMAGE"}
+              </button>
+            )}
+
+          <button
+            type="button"
+            className="completedButton"
+            onClick={
+              completePaymentSubmission
+            }
+            disabled={
+              !transactionUploaded ||
+              submittingTransaction
+            }
+          >
+            {submittingTransaction
+              ? "SUBMITTING..."
+              : "COMPLETED"}
+          </button>
+        </div>
+      )}
+
+      {/* PAYMENT STATUS POPUP */}
       {statusVisible && (
         <div
           className="overlay"
@@ -1255,31 +1600,19 @@ body {
           background:
             radial-gradient(
               circle at top left,
-              rgba(
-                229,
-                9,
-                20,
-                0.16
-              ),
+              rgba(229, 9, 20, 0.16),
               transparent 35%
             ),
             radial-gradient(
               circle at bottom right,
-              rgba(
-                180,
-                0,
-                0,
-                0.1
-              ),
+              rgba(180, 0, 0, 0.1),
               transparent 30%
             ),
             #080808;
-
           color: #fff;
           padding: 0 18px 55px;
           position: relative;
           overflow: hidden;
-
           font-family:
             Inter,
             system-ui,
@@ -1315,11 +1648,9 @@ body {
           max-width: 920px;
           margin: 0 auto;
           padding: 22px 0;
-
           display: flex;
           justify-content: space-between;
           align-items: center;
-
           position: relative;
           z-index: 2;
         }
@@ -1327,11 +1658,9 @@ body {
         .logo {
           color: #fff;
           text-decoration: none;
-
           display: flex;
           align-items: center;
           gap: 10px;
-
           font-weight: 900;
           letter-spacing: 0.08em;
         }
@@ -1339,24 +1668,19 @@ body {
         .logoMark {
           width: 37px;
           height: 37px;
-
           display: grid;
           place-items: center;
-
           border-radius: 10px;
           background: #e50914;
           color: #fff;
-
           font-weight: 900;
-
           box-shadow:
-            0 0 25px
-              rgba(
-                229,
-                9,
-                20,
-                0.35
-              );
+            0 0 25px rgba(
+              229,
+              9,
+              20,
+              0.35
+            );
         }
 
         .logoText {
@@ -1366,17 +1690,12 @@ body {
         .backButton {
           color: #fff;
           text-decoration: none;
-
           font-size: 12px;
           font-weight: 800;
-
           padding: 10px 15px;
-
           border: 1px solid #4a1c1f;
           border-radius: 9px;
-
           background: #16090a;
-
           transition: 0.2s ease;
         }
 
@@ -1389,7 +1708,6 @@ body {
           width: 100%;
           max-width: 680px;
           margin: 0 auto;
-
           position: relative;
           z-index: 1;
         }
@@ -1418,16 +1736,12 @@ body {
           0%,
           100% {
             opacity: 0.55;
-            transform: translateY(
-              0
-            );
+            transform: translateY(0);
           }
 
           50% {
             opacity: 1;
-            transform: translateY(
-              -3px
-            );
+            transform: translateY(-3px);
           }
         }
 
@@ -1437,12 +1751,9 @@ body {
             8vw,
             58px
           );
-
           line-height: 1;
           letter-spacing: -0.055em;
-
           margin: 12px 0;
-
           animation:
             titleIn 0.8s
             ease-out;
@@ -1451,16 +1762,12 @@ body {
         @keyframes titleIn {
           from {
             opacity: 0;
-            transform: translateY(
-              15px
-            );
+            transform: translateY(15px);
           }
 
           to {
             opacity: 1;
-            transform: translateY(
-              0
-            );
+            transform: translateY(0);
           }
         }
 
@@ -1468,10 +1775,8 @@ body {
           color: #aaa;
           max-width: 480px;
           margin: 0 auto;
-
           line-height: 1.6;
           font-size: 14px;
-
           animation:
             subtitlePulse 2.4s
             ease-in-out infinite;
@@ -1492,11 +1797,9 @@ body {
           background: #251012;
           border: 1px solid #6d2228;
           color: #ffb2b7;
-
           padding: 14px;
           border-radius: 12px;
           margin-bottom: 14px;
-
           font-size: 13px;
         }
 
@@ -1504,13 +1807,10 @@ body {
           display: flex;
           justify-content: space-between;
           gap: 20px;
-
           padding: 18px;
-
           background: #111;
           border: 1px solid #351719;
           border-radius: 16px;
-
           margin-bottom: 14px;
         }
 
@@ -1526,22 +1826,22 @@ body {
 
         .paymentCard {
           background: #101010;
-
           border: 1px solid #3a191b;
           border-radius: 22px;
-
           padding: 20px;
-
           box-shadow:
-            0 25px 80px
-              rgba(0, 0, 0, 0.45),
-            0 0 45px
-              rgba(
-                229,
-                9,
-                20,
-                0.04
-              );
+            0 25px 80px rgba(
+              0,
+              0,
+              0,
+              0.45
+            ),
+            0 0 45px rgba(
+              229,
+              9,
+              20,
+              0.04
+            );
         }
 
         .cardHeader {
@@ -1574,31 +1874,23 @@ body {
             4,
             1fr
           );
-
           gap: 8px;
           margin: 22px 0;
         }
 
         .methodButton {
           min-height: 72px;
-
           border-radius: 12px;
           border: 1px solid #332022;
-
           background: #151515;
           color: #aaa;
-
           cursor: pointer;
-
           display: flex;
           flex-direction: column;
           justify-content: center;
           align-items: center;
-
           gap: 7px;
-
           font-size: 11px;
-
           transition:
             transform 0.2s ease,
             border-color 0.2s ease,
@@ -1606,10 +1898,7 @@ body {
         }
 
         .methodButton:hover {
-          transform: translateY(
-            -2px
-          );
-
+          transform: translateY(-2px);
           border-color: #e50914;
         }
 
@@ -1617,15 +1906,13 @@ body {
           background: #e50914;
           border-color: #ff3945;
           color: #fff;
-
           box-shadow:
-            0 8px 25px
-              rgba(
-                229,
-                9,
-                20,
-                0.25
-              );
+            0 8px 25px rgba(
+              229,
+              9,
+              20,
+              0.25
+            );
         }
 
         .methodSymbol {
@@ -1635,12 +1922,10 @@ body {
 
         .loading {
           min-height: 250px;
-
           display: flex;
           flex-direction: column;
           justify-content: center;
           align-items: center;
-
           color: #777;
           gap: 15px;
         }
@@ -1648,12 +1933,9 @@ body {
         .spinner {
           width: 34px;
           height: 34px;
-
           border: 3px solid #331619;
           border-top-color: #e50914;
-
           border-radius: 50%;
-
           animation:
             spin 0.8s linear
             infinite;
@@ -1661,9 +1943,7 @@ body {
 
         @keyframes spin {
           to {
-            transform: rotate(
-              360deg
-            );
+            transform: rotate(360deg);
           }
         }
 
@@ -1687,26 +1967,20 @@ body {
         .coinBadge {
           width: 40px;
           height: 40px;
-
           display: grid;
           place-items: center;
-
           border-radius: 50%;
-
           background: #e50914;
           color: #fff;
-
           font-weight: 900;
           font-size: 12px;
-
           box-shadow:
-            0 0 20px
-              rgba(
-                229,
-                9,
-                20,
-                0.25
-              );
+            0 0 20px rgba(
+              229,
+              9,
+              20,
+              0.25
+            );
         }
 
         .qrBox {
@@ -1718,9 +1992,7 @@ body {
         .qrBox img {
           width: 190px;
           height: 190px;
-
           object-fit: contain;
-
           background: #fff;
           border-radius: 12px;
           padding: 8px;
@@ -1732,7 +2004,6 @@ body {
 
         .walletRow {
           margin-top: 8px;
-
           display: flex;
           align-items: stretch;
           gap: 8px;
@@ -1741,35 +2012,25 @@ body {
         .walletAddress {
           flex: 1;
           min-width: 0;
-
           padding: 13px;
-
           border-radius: 10px;
           background: #080808;
           border: 1px solid #332022;
-
           color: #ddd;
-
           font-family: monospace;
           font-size: 12px;
           line-height: 1.5;
-
           overflow-wrap: anywhere;
         }
 
         .copyButton {
           border: 0;
-
           background: #e50914;
           color: #fff;
-
           padding: 0 16px;
-
           border-radius: 10px;
-
           font-weight: 900;
           cursor: pointer;
-
           transition: 0.2s ease;
         }
 
@@ -1788,31 +2049,22 @@ body {
 
         .information {
           margin-top: 16px;
-
           padding: 14px;
-
           border-radius: 10px;
-
           background: #161616;
           border: 1px solid #281719;
-
           color: #aaa;
-
           font-size: 13px;
           line-height: 1.6;
-
           white-space: pre-wrap;
         }
 
         .warning {
           margin-top: 14px;
           padding: 13px;
-
           display: flex;
           gap: 10px;
-
           border-radius: 10px;
-
           background: #181010;
           border: 1px solid #3c1b1e;
         }
@@ -1821,41 +2073,30 @@ body {
           width: 20px;
           height: 20px;
           flex: 0 0 20px;
-
           display: grid;
           place-items: center;
-
           border-radius: 50%;
-
           background: #e50914;
           color: #fff;
-
           font-size: 12px;
           font-weight: 900;
         }
 
         .warning p {
           margin: 0;
-
           color: #aaa;
-
           font-size: 12px;
           line-height: 1.5;
         }
 
         .statusSection {
           margin-top: 18px;
-
           padding: 14px;
-
           border: 1px solid #352022;
           border-radius: 12px;
-
           display: flex;
           align-items: center;
-
           gap: 11px;
-
           background: #120b0c;
         }
 
@@ -1872,45 +2113,37 @@ body {
         .statusDot {
           width: 10px;
           height: 10px;
-
           border-radius: 50%;
-
           background: #d7a82c;
-
           box-shadow:
-            0 0 0 5px
-              rgba(
-                215,
-                168,
-                44,
-                0.1
-              );
+            0 0 0 5px rgba(
+              215,
+              168,
+              44,
+              0.1
+            );
         }
 
         .statusDot.confirmed {
           background: #2bb673;
-
           box-shadow:
-            0 0 0 5px
-              rgba(
-                43,
-                182,
-                115,
-                0.1
-              );
+            0 0 0 5px rgba(
+              43,
+              182,
+              115,
+              0.1
+            );
         }
 
         .statusDot.failed {
           background: #e44;
-
           box-shadow:
-            0 0 0 5px
-              rgba(
-                238,
-                68,
-                68,
-                0.1
-              );
+            0 0 0 5px rgba(
+              238,
+              68,
+              68,
+              0.1
+            );
         }
 
         .statusSection strong {
@@ -1927,39 +2160,28 @@ body {
 
         .statusBadge {
           margin-left: auto;
-
           color: #ff5260 !important;
-
           font-size: 9px !important;
           font-weight: 900;
-
           letter-spacing: 0.08em;
         }
 
         .actions {
           display: grid;
-
           grid-template-columns: 1fr;
-
           gap: 10px;
-
           margin-top: 14px;
         }
 
         .checkStatusButton,
         .invoiceButton {
           min-height: 50px;
-
           border-radius: 11px;
-
           display: grid;
           place-items: center;
-
           font-size: 13px;
           font-weight: 900;
-
           cursor: pointer;
-
           transition:
             transform 0.2s ease,
             box-shadow 0.2s ease;
@@ -1967,33 +2189,26 @@ body {
 
         .checkStatusButton {
           border: 1px solid #ff303c;
-
           background: #e50914;
           color: #fff;
-
           box-shadow:
-            0 8px 30px
-              rgba(
-                229,
-                9,
-                20,
-                0.2
-              );
+            0 8px 30px rgba(
+              229,
+              9,
+              20,
+              0.2
+            );
         }
 
         .checkStatusButton:hover {
-          transform: translateY(
-            -2px
-          );
-
+          transform: translateY(-2px);
           box-shadow:
-            0 12px 35px
-              rgba(
-               229,
-                9,
-                20,
-                0.3
-              );
+            0 12px 35px rgba(
+              229,
+              9,
+              20,
+              0.3
+            );
         }
 
         .checkStatusButton:disabled {
@@ -2004,7 +2219,6 @@ body {
 
         .invoiceButton {
           border: 1px solid #383838;
-
           background: #171717;
           color: #fff;
         }
@@ -2016,35 +2230,153 @@ body {
 
         .footer {
           text-align: center;
-
           color: #555;
-
           font-size: 11px;
-
           margin: 25px 0 0;
         }
+
+        /* FLOATING PAYMENT PANEL */
+
+        .paymentFloat {
+          position: fixed;
+          right: 18px;
+          bottom: 18px;
+          width: min(
+            340px,
+            calc(100vw - 36px)
+          );
+          padding: 18px;
+          background: #111;
+          border: 1px solid #e50914;
+          border-radius: 18px;
+          box-shadow:
+            0 20px 70px rgba(
+              0,
+              0,
+              0,
+              0.7
+            ),
+            0 0 35px rgba(
+              229,
+              9,
+              20,
+              0.2
+            );
+          z-index: 40;
+          animation:
+            paymentFloatIn 0.35s
+            ease-out;
+        }
+
+        @keyframes paymentFloatIn {
+          from {
+            opacity: 0;
+            transform:
+              translateY(25px)
+              scale(0.94);
+          }
+
+          to {
+            opacity: 1;
+            transform:
+              translateY(0)
+              scale(1);
+          }
+        }
+
+        .floatCancel {
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          width: 28px;
+          height: 28px;
+          border: 0;
+          border-radius: 50%;
+          background: #222;
+          color: #fff;
+          cursor: pointer;
+        }
+
+        .floatTitle {
+          text-align: center;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.12em;
+          color: #ff3b46;
+          margin-bottom: 8px;
+        }
+
+        .floatText {
+          margin: 0 0 12px;
+          text-align: center;
+          color: #888;
+          font-size: 11px;
+          line-height: 1.5;
+        }
+
+        .transactionPreview {
+          display: block;
+          width: 100%;
+          max-height: 180px;
+          object-fit: contain;
+          border-radius: 10px;
+          background: #080808;
+          margin-bottom: 10px;
+        }
+
+        .uploadImageButton,
+        .saveImageButton,
+        .completedButton {
+          width: 100%;
+          min-height: 44px;
+          border-radius: 10px;
+          display: grid;
+          place-items: center;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+          margin-top: 8px;
+        }
+
+        .uploadImageButton {
+          background: #1a1a1a;
+          border: 1px solid #444;
+          color: #fff;
+        }
+
+        .saveImageButton {
+          background: #292929;
+          border: 1px solid #555;
+          color: #fff;
+        }
+
+        .completedButton {
+          background: #e50914;
+          border: 1px solid #ff3541;
+          color: #fff;
+        }
+
+        .completedButton:disabled,
+        .saveImageButton:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        /* STATUS MODAL */
 
         .overlay {
           position: fixed;
           inset: 0;
-
-          background:
-            rgba(
-              0,
-              0,
-              0,
-              0.86
-            );
-
-          backdrop-filter: blur(
-            12px
+          background: rgba(
+            0,
+            0,
+            0,
+            0.86
           );
-
+          backdrop-filter: blur(12px);
           display: grid;
           place-items: center;
-
           padding: 20px;
-
           z-index: 50;
         }
 
@@ -2053,33 +2385,24 @@ body {
             100%,
             390px
           );
-
           background: #111;
-
           border: 1px solid #472024;
-
           border-radius: 24px;
-
           padding: 30px;
-
           text-align: center;
-
           box-shadow:
-            0 30px 100px
-              rgba(
-                0,
-                0,
-                0,
-                0.75
-              ),
-            0 0 50px
-              rgba(
-                229,
-                9,
-                20,
-                0.08
-              );
-
+            0 30px 100px rgba(
+              0,
+              0,
+              0,
+              0.75
+            ),
+            0 0 50px rgba(
+              229,
+              9,
+              20,
+              0.08
+            );
           animation:
             modalIn 0.3s
             ease-out;
@@ -2112,42 +2435,33 @@ body {
         .floatingIcon {
           width: 82px;
           height: 82px;
-
           border-radius: 50%;
-
           display: grid;
           place-items: center;
-
           margin: 0 auto 20px;
-
           background:
             radial-gradient(
               circle,
               #e50914,
               #780006
             );
-
           font-size: 37px;
-
           animation:
             floating 1.8s
             ease-in-out infinite;
-
           box-shadow:
-            0 0 0 8px
-              rgba(
-                229,
-                9,
-                20,
-                0.08
-              ),
-            0 0 40px
-              rgba(
-                229,
-                9,
-                20,
-                0.25
-              );
+            0 0 0 8px rgba(
+              229,
+              9,
+              20,
+              0.08
+            ),
+            0 0 40px rgba(
+              229,
+              9,
+              20,
+              0.25
+            );
         }
 
         .statusModal.confirmed
@@ -2158,22 +2472,6 @@ body {
               #2bb673,
               #105c38
             );
-
-          box-shadow:
-            0 0 0 8px
-              rgba(
-                43,
-                182,
-                115,
-                0.08
-              ),
-            0 0 40px
-              rgba(
-                43,
-                182,
-                115,
-                0.25
-              );
         }
 
         .statusModal.failed
@@ -2184,22 +2482,6 @@ body {
               #e44,
               #79151b
             );
-
-          box-shadow:
-            0 0 0 8px
-              rgba(
-                238,
-                68,
-                68,
-                0.08
-              ),
-            0 0 40px
-              rgba(
-                238,
-                68,
-                68,
-                0.25
-              );
         }
 
         @keyframes floating {
@@ -2219,19 +2501,14 @@ body {
 
         .statusModal h2 {
           margin: 10px 0;
-
           font-size: 25px;
-
           letter-spacing: -0.03em;
         }
 
         .statusModal p {
           color: #888;
-
           line-height: 1.6;
-
           font-size: 13px;
-
           margin: 0 0 20px;
         }
 
@@ -2239,27 +2516,19 @@ body {
           display: flex;
           align-items: center;
           justify-content: center;
-
           gap: 8px;
-
           padding: 11px;
-
           border-radius: 10px;
-
           background: #181818;
           border: 1px solid #292929;
-
           color: #aaa;
-
           font-size: 11px;
         }
 
         .modalDot {
           width: 8px;
           height: 8px;
-
           border-radius: 50%;
-
           background: #d7a82c;
         }
 
@@ -2274,7 +2543,6 @@ body {
         .modalActions {
           display: grid;
           gap: 9px;
-
           margin-top: 18px;
         }
 
@@ -2282,23 +2550,19 @@ body {
         .closeButton {
           width: 100%;
           min-height: 46px;
-
           border-radius: 10px;
-
           font-weight: 900;
           cursor: pointer;
         }
 
         .modalInvoice {
           border: 1px solid #e50914;
-
           background: #e50914;
           color: #fff;
         }
 
         .closeButton {
           border: 1px solid #333;
-
           background: #1b1b1b;
           color: #fff;
         }
