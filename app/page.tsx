@@ -619,118 +619,146 @@ export default function PaymentPage() {
    * Timer begins ONLY here.
    */
   async function copyInfo() {
-    const wallet =
-      method?.wallet_address ||
-      method?.address ||
-      ""
+  const wallet =
+    method?.wallet_address ||
+    method?.address ||
+    ""
 
-    if (!wallet) {
-      setError(
-        "Wallet address is not available."
-      )
-      return
-    }
+  if (!wallet) {
+    setError(
+      "Wallet address is not available."
+    )
+    return
+  }
 
-    try {
+  const details = getOrderDetails()
+
+  if (!details?.orderId) {
+    setError(
+      "Order could not be identified."
+    )
+    return
+  }
+
+  /*
+   * START THE 60-SECOND COUNTDOWN
+   * IMMEDIATELY WHEN COPY IS PRESSED.
+   */
+  const storageKey =
+    `kakobuy-payment-timer-${details.orderId}`
+
+  const expiresAt =
+    Date.now() + 60 * 1000
+
+  sessionStorage.setItem(
+    storageKey,
+    String(expiresAt)
+  )
+
+  setTimerStarted(true)
+  setTimeLeft(60)
+  setPaymentPanelVisible(true)
+  setError("")
+
+  /*
+   * Copy the wallet address.
+   * Clipboard is attempted separately so
+   * a browser clipboard problem cannot stop
+   * the countdown.
+   */
+  try {
+    if (
+      navigator.clipboard &&
+      window.isSecureContext
+    ) {
       await navigator.clipboard.writeText(
         wallet
       )
-
-      setCopied(true)
-      setError("")
-
-      window.setTimeout(() => {
-        setCopied(false)
-      }, 2000)
-
-      const details =
-        getOrderDetails()
-
-      if (!details?.orderId) {
-        return
-      }
-
-      try {
-        const response =
-          await fetch(
-            "/api/payment-status",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify({
-                orderId:
-                  details.orderId,
-                email:
-                  details.email ||
-                  undefined,
-                wallet_copied: true,
-                paymentMethod:
-                  selected,
-              }),
-            }
-          )
-
-        if (!response.ok) {
-          console.error(
-            "Could not save wallet copied status."
-          )
-        }
-      } catch (err) {
-        console.error(
-          "Wallet copied API error:",
-          err
-        )
-      }
-
-      /*
-       * START TIMER ONLY ON FIRST COPY
-       */
-      if (!timerStarted) {
-        const storageKey =
-          `kakobuy-payment-timer-${details.orderId}`
-
-        const expiresAt =
-          Date.now() +
-          60 * 1000
-
-        sessionStorage.setItem(
-          storageKey,
-          String(expiresAt)
+    } else {
+      const textArea =
+        document.createElement(
+          "textarea"
         )
 
-        setTimerStarted(true)
-        setTimeLeft(60)
+      textArea.value = wallet
+      textArea.style.position =
+        "fixed"
+      textArea.style.opacity = "0"
+      textArea.style.pointerEvents =
+        "none"
 
-        /*
-         * SHOW FLOATING SUBMISSION PANEL
-         */
-        setPaymentPanelVisible(
-          true
-        )
-      } else {
-        /*
-         * If the timer has already started,
-         * still make sure the submission panel
-         * is visible.
-         */
-        setPaymentPanelVisible(
-          true
-        )
-      }
-    } catch (err) {
-      console.error(
-        "Copy wallet error:",
-        err
+      document.body.appendChild(
+        textArea
       )
 
-      setError(
-        "Unable to copy wallet address."
+      textArea.focus()
+      textArea.select()
+
+      document.execCommand("copy")
+
+      document.body.removeChild(
+        textArea
       )
     }
+
+    setCopied(true)
+
+    window.setTimeout(() => {
+      setCopied(false)
+    }, 2000)
+  } catch (err) {
+    console.error(
+      "Copy wallet error:",
+      err
+    )
+
+    /*
+     * The timer still continues even if
+     * clipboard access fails.
+     */
+    setError(
+      "Copy was not available, but the payment timer has started."
+    )
   }
+
+  /*
+   * Tell the server that the wallet was copied.
+   */
+  try {
+    const response =
+      await fetch(
+        "/api/payment-status",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            orderId:
+              details.orderId,
+            email:
+              details.email ||
+              undefined,
+            wallet_copied: true,
+            paymentMethod:
+              selected,
+          }),
+        }
+      )
+
+    if (!response.ok) {
+      console.error(
+        "Could not save wallet copied status."
+      )
+    }
+  } catch (err) {
+    console.error(
+      "Wallet copied API error:",
+      err
+    )
+  }
+}
 
   /*
    * SELECT + AUTOMATICALLY UPLOAD SCREENSHOT
