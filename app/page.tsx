@@ -456,6 +456,65 @@ export default function Home() {
           setStatusVisible(true)
         }
       } catch (error) {
+  /*
+   * Poll payment status.
+   */
+  useEffect(() => {
+    const details = getOrderDetails()
+
+    if (!details || !details.orderId) {
+      return
+    }
+
+    const orderId = details.orderId
+    const email = details.email
+
+    let active = true
+
+    const checkStatus = async () => {
+      try {
+        const query = new URLSearchParams()
+
+        query.set("orderId", orderId)
+
+        if (email) {
+          query.set("email", email)
+        }
+
+        const response = await fetch(
+          `/api/payment-status?${query.toString()}`,
+          {
+            cache: "no-store",
+          }
+        )
+
+        const data = await response.json()
+
+        if (!response.ok || !data.order) {
+          return
+        }
+
+        if (!active) {
+          return
+        }
+
+        const newStatus: PaymentStatus =
+          data.order.payment_status || "pending"
+
+        setPaymentStatus(newStatus)
+
+        setOrder((previous) => ({
+          ...(previous || {}),
+          ...data.order,
+        }))
+
+        if (
+          newStatus === "confirmed" ||
+          newStatus === "failed"
+        ) {
+          setStatusVisible(true)
+        }
+      } catch (error) {
         console.error(
           "Payment status error:",
           error
@@ -465,20 +524,20 @@ export default function Home() {
 
     checkStatus()
 
-    const interval =
-      window.setInterval(
-        checkStatus,
-        2000
-      )
+    const interval = window.setInterval(
+      checkStatus,
+      2000
+    )
 
     return () => {
       active = false
-      window.clearInterval(
-        interval
-      )
+      window.clearInterval(interval)
     }
   }, [])
 
+  /*
+   * Copy wallet/payment information.
+   */
   /*
    * Copy wallet/payment information.
    */
