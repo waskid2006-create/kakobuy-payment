@@ -37,6 +37,9 @@ export default function AdminPage() {
   const [information, setInformation] =
     useState("")
 
+  const [walletAddress, setWalletAddress] =
+    useState("")
+
   const [heroHeading, setHeroHeading] =
     useState("PAY WITH CRYPTO")
 
@@ -63,7 +66,6 @@ export default function AdminPage() {
   const [saving, setSaving] =
     useState(false)
 
-  /* PAYMENT STATUS */
   const [orderId, setOrderId] =
     useState("")
 
@@ -84,12 +86,13 @@ export default function AdminPage() {
     async function loadInformation() {
       setLoading(true)
       setSaved(false)
-      setQrPreview("")
       setQrFile(null)
 
       try {
         const response = await fetch(
-          `/api/payment-methods?id=${selected}`,
+          `/api/payment-methods?id=${encodeURIComponent(
+            selected
+          )}`,
           {
             cache: "no-store",
           }
@@ -99,47 +102,63 @@ export default function AdminPage() {
 
         if (!response.ok) {
           throw new Error(
-            data.error ||
+            data?.error ||
               "Unable to load payment method"
           )
         }
 
+        /*
+         * Your API returns the payment data
+         * inside data.paymentMethod.
+         */
+        const paymentMethod =
+          data?.paymentMethod || data
+
         setInformation(
-          data.information || ""
+          paymentMethod?.information || ""
+        )
+
+        setWalletAddress(
+          paymentMethod?.wallet_address ||
+            paymentMethod?.address ||
+            ""
         )
 
         setHeroHeading(
-          data.hero_heading ||
+          paymentMethod?.hero_title ||
+            paymentMethod?.hero_heading ||
             "PAY WITH CRYPTO"
         )
 
         setHeroSubtitle(
-          data.hero_subtitle ||
+          paymentMethod?.hero_subtitle ||
             "Secure and simple crypto payment"
         )
 
         setFooterText(
-          data.footer_text ||
+          paymentMethod?.footer_text ||
             "KAKOBUY"
         )
 
-        if (data.qr_image_url) {
-          setQrPreview(
-            data.qr_image_url
-          )
-        }
+        setQrPreview(
+          paymentMethod?.qr_image ||
+            paymentMethod?.qr_image_url ||
+            ""
+        )
       } catch (error) {
         console.error(
-          "Load error:",
+          "Load payment method error:",
           error
         )
 
         setInformation("")
+        setWalletAddress("")
         setHeroHeading("PAY WITH CRYPTO")
         setHeroSubtitle(
           "Secure and simple crypto payment"
         )
         setFooterText("KAKOBUY")
+        setQrPreview("")
       } finally {
         setLoading(false)
       }
@@ -148,9 +167,6 @@ export default function AdminPage() {
     loadInformation()
   }, [selected])
 
-  /*
-   * Load the current status of the order.
-   */
   async function loadOrderStatus() {
     if (!orderId.trim()) {
       alert("Enter an Order ID first.")
@@ -171,7 +187,7 @@ export default function AdminPage() {
 
       if (!response.ok || !data.order) {
         throw new Error(
-          data.error ||
+          data?.error ||
             "Unable to load order status."
         )
       }
@@ -203,9 +219,6 @@ export default function AdminPage() {
     }
   }
 
-  /*
-   * Save payment status for the order.
-   */
   async function savePaymentStatus() {
     if (statusSaving) return
 
@@ -238,13 +251,13 @@ export default function AdminPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
+          data?.error ||
             "Unable to save payment status."
         )
       }
 
       setPaymentStatus(
-        data.order?.payment_status ||
+        data?.order?.payment_status ||
           paymentStatus
       )
 
@@ -277,10 +290,17 @@ export default function AdminPage() {
 
     if (!file) return
 
-    if (!file.type.startsWith("image/")) {
+    if (
+      ![
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ].includes(file.type)
+    ) {
       alert(
-        "Please choose an image file."
+        "QR image must be JPG, PNG, or WEBP."
       )
+      event.target.value = ""
       return
     }
 
@@ -288,6 +308,7 @@ export default function AdminPage() {
       alert(
         "QR image must be smaller than 5 MB."
       )
+      event.target.value = ""
       return
     }
 
@@ -317,6 +338,14 @@ export default function AdminPage() {
       formData.append(
         "information",
         information
+      )
+
+      /*
+       * THIS IS THE IMPORTANT NEW FIELD.
+       */
+      formData.append(
+        "wallet_address",
+        walletAddress.trim()
       )
 
       formData.append(
@@ -360,18 +389,31 @@ export default function AdminPage() {
         data = {
           error:
             text ||
-            "Server returned an invalid response",
+            "Server returned an invalid response.",
         }
       }
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
+          data?.error ||
             `Save failed with status ${response.status}`
         )
       }
 
-      if (data.qr_image_url) {
+      /*
+       * Keep the wallet value returned
+       * by the API.
+       */
+      if (
+        data?.wallet_address !==
+        undefined
+      ) {
+        setWalletAddress(
+          data.wallet_address || ""
+        )
+      }
+
+      if (data?.qr_image_url) {
         setQrPreview(
           data.qr_image_url
         )
@@ -380,7 +422,7 @@ export default function AdminPage() {
       setQrFile(null)
       setSaved(true)
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         setSaved(false)
       }, 3000)
     } catch (error) {
@@ -403,27 +445,53 @@ export default function AdminPage() {
     <main className="admin-page">
       <div className="admin-container">
 
-        <div className="admin-header">
+        <header className="admin-header">
           <div>
             <h1>
               <span>KAKO</span>BUY
             </h1>
 
-            <p>Admin Panel</p>
+            <p>
+              Payment Admin — Page 3
+            </p>
           </div>
 
           <a
             href="/"
             className="back-button"
           >
-            View page
+            View Page
           </a>
-        </div>
+        </header>
 
-        {/* PAYMENT STATUS CONTROL */}
+        {/* ADMIN NAVIGATION */}
 
-        <section className="admin-card status-card">
+        <nav className="admin-navigation">
+          <a
+            href="https://kakobuy-mini.vercel.app/admin"
+            className="admin-nav-link"
+          >
+            PAGE 1 ADMIN
+          </a>
 
+          <a
+            href="https://kakobuy-check-order.vercel.app/admin"
+            className="admin-nav-link"
+          >
+            PAGE 2 ADMIN
+          </a>
+
+          <a
+            href="https://kakobuy-payment-page.vercel.app/admin"
+            className="admin-nav-link active"
+          >
+            PAGE 3 ADMIN
+          </a>
+        </nav>
+
+        {/* PAYMENT STATUS */}
+
+        <section className="admin-card">
           <div className="admin-title">
             <div>
               <p className="admin-label">
@@ -437,9 +505,10 @@ export default function AdminPage() {
           </div>
 
           <p className="admin-description">
-            Set the payment status for a
-            customer's order. The buyer's
-            Page 3 will receive this status.
+            Change the payment status for
+            a customer's order. The buyer
+            will receive the update on
+            Page 3 automatically.
           </p>
 
           <label className="field-label">
@@ -467,7 +536,7 @@ export default function AdminPage() {
               }
               disabled={statusSaving}
             >
-              Load
+              LOAD
             </button>
           </div>
 
@@ -476,7 +545,6 @@ export default function AdminPage() {
           </label>
 
           <div className="status-options">
-
             <button
               type="button"
               className={`status-option pending ${
@@ -566,7 +634,6 @@ export default function AdminPage() {
                 </small>
               </span>
             </button>
-
           </div>
 
           <button
@@ -581,57 +648,62 @@ export default function AdminPage() {
             }
           >
             {statusSaving
-              ? "Saving status..."
+              ? "SAVING..."
               : statusSaved
-                ? "✓ Status saved"
-                : "Save payment status"}
+              ? "✓ STATUS SAVED"
+              : "SAVE PAYMENT STATUS"}
           </button>
-
         </section>
 
         {/* PAYMENT METHODS */}
 
         <section className="admin-card">
+          <p className="admin-label">
+            CRYPTO SETTINGS
+          </p>
+
           <h2>
             Payment Methods
           </h2>
 
           <p className="admin-description">
-            Select a method to edit its
-            payment information and
-            payment-page appearance.
+            Select a cryptocurrency to
+            edit its wallet address,
+            QR code and payment-page
+            information.
           </p>
 
           <div className="admin-methods">
-            {methods.map((method) => (
+            {methods.map((item) => (
               <button
-                key={method.id}
+                key={item.id}
+                type="button"
                 onClick={() =>
-                  setSelected(method.id)
+                  setSelected(
+                    item.id
+                  )
                 }
                 className={`admin-method ${
-                  selected === method.id
+                  selected === item.id
                     ? "admin-selected"
                     : ""
                 }`}
-                type="button"
               >
                 <strong>
-                  {method.symbol}
+                  {item.symbol}
                 </strong>
 
                 <span>
-                  {method.name}
+                  {item.name}
                 </span>
               </button>
             ))}
           </div>
         </section>
 
-        {/* PAYMENT METHOD EDITOR */}
+        {/* PAYMENT EDITOR */}
 
         <section className="admin-card">
-
           <div className="admin-title">
             <div>
               <p className="admin-label">
@@ -643,6 +715,38 @@ export default function AdminPage() {
               </h2>
             </div>
           </div>
+
+          {/* WALLET ADDRESS */}
+
+          <label className="field-label">
+            Wallet Address
+          </label>
+
+          <div className="wallet-editor">
+            <input
+              value={walletAddress}
+              onChange={(event) =>
+                setWalletAddress(
+                  event.target.value
+                )
+              }
+              className="admin-input wallet-input"
+              placeholder={`Enter ${current?.name} wallet address`}
+              disabled={
+                loading || saving
+              }
+              autoComplete="off"
+              spellCheck={false}
+            />
+
+            <p className="wallet-help">
+              This address will appear
+              on the buyer's Page 3
+              for {current?.name}.
+            </p>
+          </div>
+
+          {/* HERO HEADING */}
 
           <label className="field-label">
             Hero Heading
@@ -662,6 +766,8 @@ export default function AdminPage() {
             }
           />
 
+          {/* HERO SUBTITLE */}
+
           <label className="field-label">
             Hero Subtitle
           </label>
@@ -679,6 +785,8 @@ export default function AdminPage() {
               loading || saving
             }
           />
+
+          {/* FOOTER */}
 
           <label className="field-label">
             Footer Text
@@ -698,8 +806,10 @@ export default function AdminPage() {
             }
           />
 
+          {/* INFORMATION */}
+
           <label className="field-label">
-            Payment information
+            Payment Information
           </label>
 
           <textarea
@@ -716,16 +826,19 @@ export default function AdminPage() {
             }
           />
 
+          {/* QR */}
+
           <label className="field-label">
             QR Code Image
           </label>
 
           <div className="upload-box">
-
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              onChange={handleQrChange}
+              onChange={
+                handleQrChange
+              }
               disabled={
                 loading || saving
               }
@@ -736,49 +849,24 @@ export default function AdminPage() {
             </p>
 
             <span>
-              PNG, JPG or WEBP
+              PNG, JPG or WEBP — max 5 MB
             </span>
-
           </div>
 
           {qrPreview && (
-            <div
-              style={{
-                marginTop: "15px",
-                padding: "15px",
-                background: "#181818",
-                borderRadius: "13px",
-                textAlign: "center",
-              }}
-            >
-              <p
-                style={{
-                  margin:
-                    "0 0 10px",
-                  color: "#999",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                }}
-              >
+            <div className="qr-preview">
+              <p>
                 QR PREVIEW
               </p>
 
               <img
                 src={qrPreview}
                 alt={`${current?.name} QR Code`}
-                style={{
-                  display: "block",
-                  width: "220px",
-                  height: "220px",
-                  maxWidth: "100%",
-                  objectFit: "contain",
-                  margin: "0 auto",
-                  background: "#fff",
-                  borderRadius: "10px",
-                }}
               />
             </div>
           )}
+
+          {/* SAVE */}
 
           <button
             onClick={saveChanges}
@@ -789,18 +877,16 @@ export default function AdminPage() {
             type="button"
           >
             {saving
-              ? "Saving..."
+              ? "SAVING..."
               : saved
-                ? "✓ Saved successfully"
-                : "Save changes"}
+              ? "✓ SAVED SUCCESSFULLY"
+              : "SAVE CHANGES"}
           </button>
-
         </section>
 
         <p className="admin-footer">
-          KAKO<span>BUY</span> Admin
+          KAKO<span>BUY</span> Admin Page 3
         </p>
-
       </div>
 
       <style jsx>{`
@@ -810,12 +896,21 @@ export default function AdminPage() {
 
         .admin-page {
           min-height: 100vh;
-          background: #080808;
+          background:
+            radial-gradient(
+              circle at top left,
+              rgba(255, 48, 48, 0.12),
+              transparent 35%
+            ),
+            #080808;
           color: #fff;
           padding: 25px 15px 50px;
           font-family:
             Inter,
             system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
             sans-serif;
         }
 
@@ -830,7 +925,7 @@ export default function AdminPage() {
           justify-content: space-between;
           align-items: center;
           gap: 15px;
-          margin-bottom: 18px;
+          margin-bottom: 15px;
         }
 
         .admin-header h1 {
@@ -856,6 +951,46 @@ export default function AdminPage() {
           padding: 9px 13px;
           border-radius: 9px;
           font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .back-button:hover {
+          border-color: #ff3030;
+          background: #180909;
+        }
+
+        .admin-navigation {
+          display: grid;
+          grid-template-columns: repeat(
+            3,
+            1fr
+          );
+          gap: 7px;
+          margin-bottom: 15px;
+        }
+
+        .admin-nav-link {
+          text-decoration: none;
+          text-align: center;
+          padding: 12px 5px;
+          border-radius: 9px;
+          border: 1px solid #292929;
+          background: #111;
+          color: #999;
+          font-size: 10px;
+          font-weight: 900;
+          transition: 0.2s ease;
+        }
+
+        .admin-nav-link:hover {
+          border-color: #ff3030;
+          color: #fff;
+        }
+
+        .admin-nav-link.active {
+          background: #ff3030;
+          border-color: #ff3030;
+          color: #fff;
         }
 
         .admin-card {
@@ -912,15 +1047,35 @@ export default function AdminPage() {
           font-size: 13px;
         }
 
+        .admin-input:focus,
+        .admin-textarea:focus {
+          border-color: #ff3030;
+          box-shadow:
+            0 0 0 2px
+              rgba(
+                255,
+                48,
+                48,
+                0.08
+              );
+        }
+
+        .wallet-input {
+          font-family: monospace;
+          font-size: 12px;
+        }
+
+        .wallet-help {
+          color: #666;
+          font-size: 10px;
+          line-height: 1.5;
+          margin: 7px 2px 0;
+        }
+
         .admin-textarea {
           min-height: 110px;
           resize: vertical;
           line-height: 1.5;
-        }
-
-        .admin-input:focus,
-        .admin-textarea:focus {
-          border-color: #ff3030;
         }
 
         .order-status-row {
@@ -1068,6 +1223,11 @@ export default function AdminPage() {
           background: #151515;
           color: #aaa;
           cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .admin-method:hover {
+          border-color: #555;
         }
 
         .admin-method strong {
@@ -1115,6 +1275,32 @@ export default function AdminPage() {
           font-size: 10px;
         }
 
+        .qr-preview {
+          margin-top: 15px;
+          padding: 15px;
+          background: #181818;
+          border-radius: 13px;
+          text-align: center;
+        }
+
+        .qr-preview p {
+          margin: 0 0 10px;
+          color: #999;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .qr-preview img {
+          display: block;
+          width: 220px;
+          height: 220px;
+          max-width: 100%;
+          object-fit: contain;
+          margin: 0 auto;
+          background: #fff;
+          border-radius: 10px;
+        }
+
         .save-button {
           width: 100%;
           min-height: 48px;
@@ -1125,6 +1311,10 @@ export default function AdminPage() {
           color: #fff;
           font-weight: 800;
           cursor: pointer;
+        }
+
+        .save-button:hover {
+          background: #ff4545;
         }
 
         .save-button:disabled {
@@ -1152,6 +1342,10 @@ export default function AdminPage() {
             padding: 15px;
           }
 
+          .admin-navigation {
+            grid-template-columns: 1fr;
+          }
+
           .admin-methods {
             grid-template-columns: repeat(
               2,
@@ -1165,6 +1359,10 @@ export default function AdminPage() {
 
           .load-status-button {
             min-height: 44px;
+          }
+
+          .admin-header {
+            align-items: flex-start;
           }
         }
       `}</style>
