@@ -8,14 +8,20 @@ const VALID_STATUSES = [
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
+    const { searchParams } =
+      new URL(request.url)
 
-    const orderId = searchParams.get("orderId")
-    const email = searchParams.get("email")
+    const orderId =
+      searchParams.get("orderId")
+
+    const email =
+      searchParams.get("email")
 
     if (!orderId) {
       return Response.json(
-        { error: "Missing order ID." },
+        {
+          error: "Missing order ID.",
+        },
         { status: 400 }
       )
     }
@@ -24,11 +30,17 @@ export async function GET(request: Request) {
       ? await sql`
           SELECT
             id,
+            full_name,
+            email,
             total,
             payment_method,
             payment_status,
             wallet_copied,
-            wallet_copied_at
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at
           FROM orders
           WHERE id = ${orderId}
           AND email = ${email}
@@ -37,11 +49,17 @@ export async function GET(request: Request) {
       : await sql`
           SELECT
             id,
+            full_name,
+            email,
             total,
             payment_method,
             payment_status,
             wallet_copied,
-            wallet_copied_at
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at
           FROM orders
           WHERE id = ${orderId}
           LIMIT 1
@@ -49,7 +67,9 @@ export async function GET(request: Request) {
 
     if (result.length === 0) {
       return Response.json(
-        { error: "Order not found." },
+        {
+          error: "Order not found.",
+        },
         { status: 404 }
       )
     }
@@ -76,16 +96,23 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body =
+      await request.json()
 
-    const orderId = body.orderId
-    const email = body.email
+    const orderId =
+      body.orderId
+
+    const email =
+      body.email
+
     const paymentMethod =
       body.paymentMethod
 
     if (!orderId) {
       return Response.json(
-        { error: "Missing order ID." },
+        {
+          error: "Missing order ID.",
+        },
         { status: 400 }
       )
     }
@@ -105,11 +132,17 @@ export async function POST(request: Request) {
           AND email = ${email}
           RETURNING
             id,
+            full_name,
+            email,
             total,
             payment_method,
             payment_status,
             wallet_copied,
-            wallet_copied_at
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at
         `
       : await sql`
           UPDATE orders
@@ -124,16 +157,24 @@ export async function POST(request: Request) {
           WHERE id = ${orderId}
           RETURNING
             id,
+            full_name,
+            email,
             total,
             payment_method,
             payment_status,
             wallet_copied,
-            wallet_copied_at
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at
         `
 
     if (result.length === 0) {
       return Response.json(
-        { error: "Order not found." },
+        {
+          error: "Order not found.",
+        },
         { status: 404 }
       )
     }
@@ -160,22 +201,30 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const body = await request.json()
+    const body =
+      await request.json()
 
-    const orderId = body.orderId
-    const status = String(
-      body.status || ""
-    ).toLowerCase()
+    const orderId =
+      body.orderId
+
+    const status =
+      String(
+        body.status || ""
+      ).toLowerCase()
 
     if (!orderId) {
       return Response.json(
-        { error: "Missing order ID." },
+        {
+          error: "Missing order ID.",
+        },
         { status: 400 }
       )
     }
 
     if (
-      !VALID_STATUSES.includes(status)
+      !VALID_STATUSES.includes(
+        status
+      )
     ) {
       return Response.json(
         {
@@ -194,16 +243,24 @@ export async function PUT(request: Request) {
       WHERE id = ${orderId}
       RETURNING
         id,
+        full_name,
+        email,
         total,
         payment_method,
         payment_status,
         wallet_copied,
-        wallet_copied_at
+        wallet_copied_at,
+        transaction_image,
+        transaction_submitted,
+        transaction_submitted_at,
+        created_at
     `
 
     if (result.length === 0) {
       return Response.json(
-        { error: "Order not found." },
+        {
+          error: "Order not found.",
+        },
         { status: 404 }
       )
     }
