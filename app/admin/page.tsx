@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-
+import { useRouter } from "next/navigation"
 const methods = [
   {
     id: "bitcoin",
@@ -31,6 +31,7 @@ type PaymentStatus =
   | "failed"
 
 export default function AdminPage() {
+  const router = useRouter()
   const [selected, setSelected] =
     useState("bitcoin")
 
