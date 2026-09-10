@@ -850,15 +850,14 @@ export default function PaymentPage() {
         true
       )
 
-      setOrder(
-        (previous) => ({
-          ...(previous || {}),
-          transaction_image:
-            data?.image ||
-            previous?.transaction_image ||
-            null,
-        })
-      )
+      setOrder((previous) =>
+  previous
+    ? {
+        ...previous,
+        transaction_image: data.image,
+      }
+    : previous
+)
     } catch (err) {
       console.error(
         "Transaction upload error:",
@@ -959,17 +958,17 @@ export default function PaymentPage() {
         false
       )
 
-      setOrder(
-        (previous) => ({
-          ...(previous || {}),
-          transaction_submitted:
-            true,
-          transaction_submitted_at:
-            new Date().toISOString(),
-          payment_status:
-            "pending",
-        })
-      )
+      setOrder((previous) =>
+  previous
+    ? {
+        ...previous,
+        transaction_submitted: true,
+        transaction_submitted_at:
+          new Date().toISOString(),
+        payment_status: "pending",
+      }
+    : previous
+)
 
       setPaymentStatus(
         "pending"
