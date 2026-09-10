@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server"
 import { sql } from "@/app/db"
 
 export async function POST(request: Request) {
@@ -25,15 +26,21 @@ export async function POST(request: Request) {
       !city ||
       !state
     ) {
-      return Response.json(
-        { error: "Please complete all delivery information." },
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Please complete all delivery information.",
+        },
         { status: 400 }
       )
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      return Response.json(
-        { error: "Your cart is empty." },
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Your cart is empty.",
+        },
         { status: 400 }
       )
     }
@@ -41,8 +48,11 @@ export async function POST(request: Request) {
     const orderTotal = Number(total)
 
     if (!Number.isFinite(orderTotal) || orderTotal < 0) {
-      return Response.json(
-        { error: "Invalid order total." },
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Invalid order total.",
+        },
         { status: 400 }
       )
     }
@@ -77,100 +87,21 @@ export async function POST(request: Request) {
       RETURNING id
     `
 
-    return Response.json({
-      success: true,
+    return NextResponse.json({
+      ok: true,
       orderId: result[0].id,
     })
   } catch (error) {
-    console.error("Create order error:", error)
+    console.error("Order API error:", error)
 
-    return Response.json(
+    return NextResponse.json(
       {
+        ok: false,
         error:
           error instanceof Error
             ? error.message
             : "Unable to create order.",
       },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-
-    const id = searchParams.get("id")
-    const email = searchParams.get("email")
-
-    if (!id) {
-      return Response.json(
-        { error: "Missing order ID." },
-        { status: 400 }
-      )
-    }
-
-    const result = email
-      ? await sql`
-          SELECT
-            id,
-            full_name,
-            email,
-            phone,
-            country,
-            address,
-            city,
-            state,
-            items,
-            total,
-            payment_method,
-            payment_status,
-            wallet_copied,
-            wallet_copied_at,
-            created_at
-          FROM orders
-          WHERE id = ${id}
-          AND email = ${email}
-          LIMIT 1
-        `
-      : await sql`
-          SELECT
-            id,
-            full_name,
-            email,
-            phone,
-            country,
-            address,
-            city,
-            state,
-            items,
-            total,
-            payment_method,
-            payment_status,
-            wallet_copied,
-            wallet_copied_at,
-            created_at
-          FROM orders
-          WHERE id = ${id}
-          LIMIT 1
-        `
-
-    if (result.length === 0) {
-      return Response.json(
-        { error: "Order not found." },
-        { status: 404 }
-      )
-    }
-
-    return Response.json({
-      success: true,
-      order: result[0],
-    })
-  } catch (error) {
-    console.error("Get order error:", error)
-
-    return Response.json(
-      { error: "Unable to load order." },
       { status: 500 }
     )
   }
