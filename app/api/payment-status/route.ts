@@ -6,6 +6,8 @@ const VALID_STATUSES = [
   "failed",
 ]
 
+/* ==================== 1. GET PAYMENT STATUS / ADMIN QUEUE ==================== */
+
 export async function GET(request: Request) {
   try {
     const { searchParams } =
@@ -17,14 +19,43 @@ export async function GET(request: Request) {
     const email =
       searchParams.get("email")
 
+    /*
+     * ADMIN MODE
+     *
+     * When there is no orderId, return orders
+     * where the buyer has submitted a transaction
+     * and is waiting for admin confirmation.
+     */
     if (!orderId) {
-      return Response.json(
-        {
-          error: "Missing order ID.",
-        },
-        { status: 400 }
-      )
+      const result = await sql`
+        SELECT
+          id,
+          full_name,
+          email,
+          total,
+          payment_method,
+          payment_status,
+          wallet_copied,
+          wallet_copied_at,
+          transaction_image,
+          transaction_submitted,
+          transaction_submitted_at,
+          created_at,
+          updated_at
+        FROM orders
+        WHERE transaction_submitted = true
+        ORDER BY
+          transaction_submitted_at DESC NULLS LAST,
+          created_at DESC
+      `
+
+      return Response.json({
+        success: true,
+        orders: result,
+      })
     }
+
+    /* ==================== 2. BUYER / SINGLE ORDER MODE ==================== */
 
     const result = email
       ? await sql`
@@ -40,7 +71,8 @@ export async function GET(request: Request) {
             transaction_image,
             transaction_submitted,
             transaction_submitted_at,
-            created_at
+            created_at,
+            updated_at
           FROM orders
           WHERE id = ${orderId}
           AND email = ${email}
@@ -59,7 +91,8 @@ export async function GET(request: Request) {
             transaction_image,
             transaction_submitted,
             transaction_submitted_at,
-            created_at
+            created_at,
+            updated_at
           FROM orders
           WHERE id = ${orderId}
           LIMIT 1
@@ -93,6 +126,8 @@ export async function GET(request: Request) {
     )
   }
 }
+
+/* ==================== 3. RECORD WALLET COPY ==================== */
 
 export async function POST(request: Request) {
   try {
@@ -142,7 +177,8 @@ export async function POST(request: Request) {
             transaction_image,
             transaction_submitted,
             transaction_submitted_at,
-            created_at
+            created_at,
+            updated_at
         `
       : await sql`
           UPDATE orders
@@ -167,7 +203,8 @@ export async function POST(request: Request) {
             transaction_image,
             transaction_submitted,
             transaction_submitted_at,
-            created_at
+            created_at,
+            updated_at
         `
 
     if (result.length === 0) {
@@ -198,6 +235,8 @@ export async function POST(request: Request) {
     )
   }
 }
+
+/* ==================== 4. ADMIN UPDATE PAYMENT STATUS ==================== */
 
 export async function PUT(request: Request) {
   try {
@@ -253,7 +292,8 @@ export async function PUT(request: Request) {
         transaction_image,
         transaction_submitted,
         transaction_submitted_at,
-        created_at
+        created_at,
+        updated_at
     `
 
     if (result.length === 0) {
