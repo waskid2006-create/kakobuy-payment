@@ -33,6 +33,7 @@ export async function GET() {
 
     return Response.json(
       {
+        success: false,
         error:
           "Unable to load payment submissions.",
       },
