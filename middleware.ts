@@ -3,19 +3,13 @@ import { NextRequest, NextResponse } from "next/server"
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  // Protect the admin dashboard with the same cookie
-  // created by /api/admin-login.
+  // Allow the admin page to load.
+  // The admin page itself checks the login cookie.
   if (pathname.startsWith("/admin")) {
-    const adminCookie = request.cookies.get("kakobuy_admin")
-
-    if (adminCookie?.value !== "authenticated") {
-      return NextResponse.redirect(
-        new URL("/", request.url)
-      )
-    }
+    return NextResponse.next()
   }
 
-  // Protect payment settings updates.
+  // Protect payment-method changes.
   if (
     pathname === "/api/payment-methods" &&
     request.method === "PUT"
