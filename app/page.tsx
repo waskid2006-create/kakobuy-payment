@@ -95,7 +95,6 @@ export default function PaymentPage() {
   const [paymentVisible, setPaymentVisible] =
     useState(false)
 
-  // 60 SECOND PAYMENT WINDOW
   const [timeLeft, setTimeLeft] =
     useState(60)
 
@@ -383,7 +382,7 @@ export default function PaymentPage() {
     details.email,
   ])
 
-  /* ==================== 60 SECOND TIMER ==================== */
+  /* ==================== 60 SECOND PAYMENT TIMER ==================== */
 
   useEffect(() => {
     if (!paymentVisible) {
@@ -391,6 +390,9 @@ export default function PaymentPage() {
     }
 
     if (timeLeft <= 0) {
+      setPaymentVisible(false)
+      setCopied(false)
+
       window.location.href =
         CHECK_ORDER_URL
 
@@ -399,19 +401,14 @@ export default function PaymentPage() {
 
     const timer =
       window.setInterval(() => {
-        setTimeLeft(
-          (previous) => {
-            if (previous <= 1) {
-              window.clearInterval(
-                timer
-              )
-
-              return 0
-            }
-
-            return previous - 1
+        setTimeLeft((previous) => {
+          if (previous <= 1) {
+            window.clearInterval(timer)
+            return 0
           }
-        )
+
+          return previous - 1
+        })
       }, 1000)
 
     return () => {
@@ -422,16 +419,21 @@ export default function PaymentPage() {
     timeLeft,
   ])
 
-  /* ==================== STATUS ==================== */
+  /* ==================== PAYMENT STATUS ==================== */
 
   function normalizeStatus(
     status?: string
   ): PaymentStatus {
-    if (status === "confirmed") {
+    const normalized =
+      String(status || "")
+        .trim()
+        .toLowerCase()
+
+    if (normalized === "confirmed") {
       return "confirmed"
     }
 
-    if (status === "failed") {
+    if (normalized === "failed") {
       return "failed"
     }
 
@@ -516,10 +518,10 @@ export default function PaymentPage() {
     }
   }
 
-  /* ==================== STATUS POLLING ==================== */
+  /* ==================== STATUS POPUP POLLING ==================== */
 
   useEffect(() => {
-    if (!order?.transaction_submitted) {
+    if (!statusOpen) {
       return
     }
 
@@ -534,12 +536,12 @@ export default function PaymentPage() {
       window.clearInterval(interval)
     }
   }, [
-    order?.transaction_submitted,
+    statusOpen,
     details.orderId,
     details.email,
   ])
 
-  /* ==================== FORMAT TIMER ==================== */
+  /* ==================== TIMER DISPLAY ==================== */
 
   const minutes =
     Math.floor(timeLeft / 60)
@@ -603,12 +605,11 @@ export default function PaymentPage() {
     setUploadError("")
     setSubmissionMessage("")
     setTransactionUploaded(false)
+    setStatusOpen(false)
 
     if (
       transactionPreview &&
-      transactionPreview.startsWith(
-        "blob:"
-      )
+      transactionPreview.startsWith("blob:")
     ) {
       URL.revokeObjectURL(
         transactionPreview
@@ -626,7 +627,6 @@ export default function PaymentPage() {
       setUploadError(
         "Please select a payment method first."
       )
-
       return
     }
 
@@ -639,7 +639,6 @@ export default function PaymentPage() {
       setUploadError(
         "Payment wallet address is not available."
       )
-
       return
     }
 
@@ -650,10 +649,14 @@ export default function PaymentPage() {
 
       setCopied(true)
 
-      // IMPORTANT:
-      // TIMER STARTS HERE — ONLY AFTER COPY
-      setPaymentVisible(true)
+      /*
+       * IMPORTANT:
+       * The 60-second timer starts ONLY here,
+       * after the buyer successfully copies
+       * the wallet address.
+       */
       setTimeLeft(60)
+      setPaymentVisible(true)
 
       setUploadError("")
 
@@ -725,7 +728,6 @@ export default function PaymentPage() {
       )
 
       event.target.value = ""
-
       return
     }
 
@@ -738,15 +740,12 @@ export default function PaymentPage() {
       )
 
       event.target.value = ""
-
       return
     }
 
     if (
       transactionPreview &&
-      transactionPreview.startsWith(
-        "blob:"
-      )
+      transactionPreview.startsWith("blob:")
     ) {
       URL.revokeObjectURL(
         transactionPreview
@@ -757,14 +756,10 @@ export default function PaymentPage() {
       URL.createObjectURL(file)
 
     setTransactionFile(file)
-    setTransactionPreview(
-      preview
-    )
+    setTransactionPreview(preview)
     setTransactionUploaded(false)
 
-    await uploadTransactionImage(
-      file
-    )
+    await uploadTransactionImage(file)
   }
 
   /* ==================== UPLOAD SCREENSHOT ==================== */
@@ -776,7 +771,6 @@ export default function PaymentPage() {
       setUploadError(
         "Order information is not available."
       )
-
       return
     }
 
@@ -841,9 +835,7 @@ export default function PaymentPage() {
         )
       }
 
-      setTransactionUploaded(
-        true
-      )
+      setTransactionUploaded(true)
 
       setOrder(
         (previous) =>
@@ -869,9 +861,7 @@ export default function PaymentPage() {
         err
       )
 
-      setTransactionUploaded(
-        false
-      )
+      setTransactionUploaded(false)
 
       setUploadError(
         err instanceof Error
@@ -894,7 +884,6 @@ export default function PaymentPage() {
       setUploadError(
         "Order information is not available."
       )
-
       return
     }
 
@@ -902,7 +891,6 @@ export default function PaymentPage() {
       setUploadError(
         "Please select a payment method first."
       )
-
       return
     }
 
@@ -910,7 +898,6 @@ export default function PaymentPage() {
       setUploadError(
         "Upload your transaction screenshot first."
       )
-
       return
     }
 
@@ -983,9 +970,7 @@ export default function PaymentPage() {
             : previous
       )
 
-      setPaymentStatus(
-        "pending"
-      )
+      setPaymentStatus("pending")
 
       setSubmissionMessage(
         "Payment submitted successfully. Your screenshot has been sent to the admin for review."
@@ -997,9 +982,7 @@ export default function PaymentPage() {
 
       if (
         transactionPreview &&
-        transactionPreview.startsWith(
-          "blob:"
-        )
+        transactionPreview.startsWith("blob:")
       ) {
         URL.revokeObjectURL(
           transactionPreview
@@ -1033,9 +1016,7 @@ export default function PaymentPage() {
     return () => {
       if (
         transactionPreview &&
-        transactionPreview.startsWith(
-          "blob:"
-        )
+        transactionPreview.startsWith("blob:")
       ) {
         URL.revokeObjectURL(
           transactionPreview
@@ -1069,7 +1050,7 @@ export default function PaymentPage() {
         <style jsx>{`
           .payment-page {
             min-height: 100vh;
-            background: #080808;
+            background: #070707;
             color: #fff;
             display: grid;
             place-items: center;
@@ -1088,6 +1069,7 @@ export default function PaymentPage() {
             border: 1px solid #292929;
             border-radius: 20px;
             background: #101010;
+            box-shadow: 0 0 55px rgba(255, 48, 48, .08);
           }
 
           .loading-orb {
@@ -1158,7 +1140,7 @@ export default function PaymentPage() {
         <style jsx>{`
           .payment-page {
             min-height: 100vh;
-            background: #080808;
+            background: #070707;
             color: #fff;
             display: grid;
             place-items: center;
@@ -1221,6 +1203,7 @@ export default function PaymentPage() {
     <main className="payment-page">
       <div className="background-orb orb-one" />
       <div className="background-orb orb-two" />
+      <div className="background-orb orb-three" />
 
       <div className="payment-container">
 
@@ -1374,143 +1357,149 @@ export default function PaymentPage() {
 
         {/* ==================== PAYMENT METHOD SELECTOR ==================== */}
 
-        <section className="payment-card">
-          <p className="section-label">
-            PAYMENT METHOD
-          </p>
-
-          <h2 className="select-title">
-            Select your payment method
-          </h2>
-
-          <div className="method-grid">
-            {methods.map(
-              (method) => (
-                <button
-                  type="button"
-                  key={method.id}
-                  className={`method-option ${
-                    selectedMethod ===
-                    method.id
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    chooseMethod(
-                      method.id
-                    )
-                  }
-                >
-                  <span className="method-symbol">
-                    {method.symbol}
-                  </span>
-
-                  <span>
-                    {method.name}
-                  </span>
-                </button>
-              )
-            )}
-          </div>
-
-          <div className="warning-box">
-            <span>!</span>
-
-            <p>
-              Please make sure you select
-              the correct payment method
-              before continuing.
+        {!order.transaction_submitted && (
+          <section className="payment-card">
+            <p className="section-label">
+              PAYMENT METHOD
             </p>
-          </div>
-        </section>
+
+            <h2 className="select-title">
+              Select your payment method
+            </h2>
+
+            <div className="method-grid">
+              {methods.map(
+                (method) => (
+                  <button
+                    type="button"
+                    key={method.id}
+                    className={`method-option ${
+                      selectedMethod ===
+                      method.id
+                        ? "selected"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      chooseMethod(
+                        method.id
+                      )
+                    }
+                  >
+                    <span className="method-symbol">
+                      {method.symbol}
+                    </span>
+
+                    <span>
+                      {method.name}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+
+            <div className="warning-box">
+              <span>!</span>
+
+              <p>
+                Please make sure you select
+                the correct payment method
+                before continuing.
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* ==================== PAYMENT INFORMATION ==================== */}
 
-        {selectedMethod && (
-          <>
-            {paymentMethodLoading ? (
-              <section className="payment-card loading-payment">
-                Loading payment details...
-              </section>
-            ) : (
-              <section className="payment-card payment-details-card">
-                <div className="payment-card-title">
-                  <span>
-                    {currentMethod?.symbol}
-                  </span>
-
-                  <div>
-                    <p className="mini-label">
-                      PAYMENT METHOD
-                    </p>
-
-                    <h2>
-                      {currentMethod?.name}
-                    </h2>
-
-                    <p className="payment-info">
-                      {paymentMethod?.information ||
-                        "Send the exact amount to the wallet below."}
-                    </p>
+        {selectedMethod &&
+          !order.transaction_submitted && (
+            <>
+              {paymentMethodLoading ? (
+                <section className="payment-card loading-payment">
+                  <div className="loading-small">
+                    <span />
+                    Loading payment details...
                   </div>
-                </div>
+                </section>
+              ) : (
+                <section className="payment-card payment-details-card">
 
-                {qrImage && (
-                  <div className="qr-area">
-                    <div className="qr-title">
-                      QR CODE
+                  <div className="payment-card-title">
+                    <span>
+                      {currentMethod?.symbol}
+                    </span>
+
+                    <div>
+                      <p className="mini-label">
+                        PAYMENT METHOD
+                      </p>
+
+                      <h2>
+                        {currentMethod?.name}
+                      </h2>
+
+                      <p className="payment-info">
+                        {paymentMethod?.information ||
+                          "Send the exact amount to the wallet below."}
+                      </p>
                     </div>
+                  </div>
 
-                    <div className="qr-wrapper">
-                      <img
-                        src={qrImage}
-                        alt={`${currentMethod?.name} QR code`}
-                      />
+                  {qrImage && (
+                    <div className="qr-area">
+                      <div className="qr-title">
+                        QR CODE
+                      </div>
+
+                      <div className="qr-wrapper">
+                        <img
+                          src={qrImage}
+                          alt={`${currentMethod?.name} QR code`}
+                        />
+                      </div>
+
+                      <p>
+                        Scan to make payment
+                      </p>
                     </div>
+                  )}
 
-                    <p>
-                      Scan to make payment
-                    </p>
+                  <div className="wallet-box">
+                    <span>
+                      WALLET ADDRESS
+                    </span>
+
+                    <div className="wallet-row">
+                      <code>
+                        {walletAddress ||
+                          "Wallet address unavailable"}
+                      </code>
+
+                      <button
+                        type="button"
+                        onClick={copyInfo}
+                        disabled={
+                          !walletAddress
+                        }
+                      >
+                        {copied
+                          ? "COPIED ✓"
+                          : "COPY"}
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                <div className="wallet-box">
-                  <span>
-                    WALLET ADDRESS
-                  </span>
+                  <div className="amount-box">
+                    <span>
+                      SEND EXACTLY
+                    </span>
 
-                  <div className="wallet-row">
-                    <code>
-                      {walletAddress ||
-                        "Wallet address unavailable"}
-                    </code>
-
-                    <button
-                      type="button"
-                      onClick={copyInfo}
-                      disabled={
-                        !walletAddress
-                      }
-                    >
-                      {copied
-                        ? "COPIED ✓"
-                        : "COPY"}
-                    </button>
+                    <strong>
+                      {orderTotal.toFixed(2)}
+                    </strong>
                   </div>
-                </div>
 
-                <div className="amount-box">
-                  <span>
-                    SEND EXACTLY
-                  </span>
-
-                  <strong>
-                    {orderTotal.toFixed(2)}
-                  </strong>
-                </div>
-
-                {!paymentVisible &&
-                  !order.transaction_submitted && (
+                  {!paymentVisible && (
                     <button
                       type="button"
                       className="pay-button"
@@ -1522,10 +1511,10 @@ export default function PaymentPage() {
                       COPY WALLET & START PAYMENT
                     </button>
                   )}
-              </section>
-            )}
-          </>
-        )}
+                </section>
+              )}
+            </>
+          )}
 
         {/* ==================== TIMER ==================== */}
 
@@ -1538,13 +1527,17 @@ export default function PaymentPage() {
                   : ""
               }`}
             >
+              <div className="timer-glow" />
+
               <div className="timer-top">
                 <span>
-                  PAYMENT WINDOW
+                  60 SECOND PAYMENT WINDOW
                 </span>
 
                 <span>
-                  60 SECONDS
+                  {timeLeft > 0
+                    ? "ACTIVE"
+                    : "EXPIRED"}
                 </span>
               </div>
 
@@ -1555,6 +1548,8 @@ export default function PaymentPage() {
               <p>
                 The countdown started when
                 you copied the wallet address.
+                When it reaches zero, you will
+                return to the order page.
               </p>
 
               <div className="timer-bar">
@@ -1687,15 +1682,12 @@ export default function PaymentPage() {
               {String(order.id)}
             </div>
 
-            {/* PAYMENT STATUS BUTTON */}
             <button
               type="button"
               className="status-button"
               onClick={async () => {
                 setStatusOpen(true)
-                await loadPaymentStatus(
-                  true
-                )
+                await loadPaymentStatus(true)
               }}
             >
               {statusLoading
@@ -1720,7 +1712,11 @@ export default function PaymentPage() {
                 event.stopPropagation()
               }
             >
+              <div className="popup-orb orb-a" />
+              <div className="popup-orb orb-b" />
+
               <button
+                type="button"
                 className="status-close"
                 onClick={() =>
                   setStatusOpen(false)
@@ -1778,11 +1774,10 @@ export default function PaymentPage() {
               </div>
 
               <button
+                type="button"
                 className="check-again"
                 onClick={() =>
-                  loadPaymentStatus(
-                    true
-                  )
+                  loadPaymentStatus(true)
                 }
                 disabled={statusLoading}
               >
@@ -1819,12 +1814,12 @@ export default function PaymentPage() {
           background:
             radial-gradient(
               circle at 10% 10%,
-              rgba(255, 25, 25, .16),
+              rgba(255, 25, 25, .18),
               transparent 30%
             ),
             radial-gradient(
               circle at 90% 35%,
-              rgba(255, 25, 25, .13),
+              rgba(255, 25, 25, .14),
               transparent 32%
             ),
             #070707;
@@ -1841,22 +1836,33 @@ export default function PaymentPage() {
 
         .background-orb {
           position: fixed;
-          width: 250px;
-          height: 250px;
+          width: 280px;
+          height: 280px;
           border-radius: 50%;
-          background: rgba(255, 30, 30, .06);
-          filter: blur(70px);
+          background: rgba(255, 30, 30, .07);
+          filter: blur(75px);
           pointer-events: none;
+          animation: floatOrb 7s ease-in-out infinite;
         }
 
         .orb-one {
-          top: -100px;
-          left: -120px;
+          top: -110px;
+          left: -130px;
         }
 
         .orb-two {
-          right: -120px;
+          right: -130px;
           bottom: 10%;
+          animation-delay: -3s;
+        }
+
+        .orb-three {
+          width: 180px;
+          height: 180px;
+          left: 40%;
+          top: 48%;
+          opacity: .5;
+          animation-delay: -5s;
         }
 
         .payment-container {
@@ -1914,6 +1920,7 @@ export default function PaymentPage() {
           font-weight: 900;
           white-space: nowrap;
           box-shadow: 0 0 22px rgba(255, 48, 48, .07);
+          animation: badgeFloat 2.5s ease-in-out infinite;
         }
 
         .order-card,
@@ -1928,10 +1935,13 @@ export default function PaymentPage() {
           padding: 18px;
           margin-bottom: 14px;
           box-shadow: 0 15px 45px rgba(0,0,0,.18);
+          animation: cardEnter .55s ease both;
         }
 
         .order-card::before,
-        .payment-details-card::before {
+        .payment-details-card::before,
+        .upload-card::before,
+        .submitted-card::before {
           content: "";
           position: absolute;
           left: 20px;
@@ -1955,7 +1965,6 @@ export default function PaymentPage() {
         .order-card-header span,
         .amount-box span,
         .wallet-box > span,
-        .timer-card > span,
         .section-label,
         .mini-label {
           display: block;
@@ -2008,6 +2017,12 @@ export default function PaymentPage() {
           border: 1px solid #242424;
           border-radius: 11px;
           background: #121212;
+          transition: .2s ease;
+        }
+
+        .item-row:hover {
+          border-color: rgba(255,48,48,.3);
+          transform: translateY(-1px);
         }
 
         .item-main {
@@ -2136,6 +2151,7 @@ export default function PaymentPage() {
           font-size: 21px;
           font-weight: 950;
           box-shadow: 0 0 25px rgba(255,48,48,.08);
+          animation: iconGlow 2s infinite;
         }
 
         .payment-card-title h2 {
@@ -2153,6 +2169,22 @@ export default function PaymentPage() {
         .loading-payment {
           color: #666;
           text-align: center;
+        }
+
+        .loading-small {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .loading-small span {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #ff3030;
+          box-shadow: 0 0 15px #ff3030;
+          animation: pulse 1s infinite;
         }
 
         .qr-area {
@@ -2224,10 +2256,12 @@ export default function PaymentPage() {
           font-size: 8px;
           font-weight: 900;
           cursor: pointer;
+          transition: .2s ease;
         }
 
         .wallet-row button:hover {
           border-color: #ff3030;
+          box-shadow: 0 0 18px rgba(255,48,48,.12);
         }
 
         .amount-box strong {
@@ -2259,6 +2293,9 @@ export default function PaymentPage() {
         .status-button:hover {
           background: #ff4545;
           transform: translateY(-1px);
+          box-shadow:
+            0 0 25px rgba(255,48,48,.18),
+            0 10px 28px rgba(255,48,48,.14);
         }
 
         .pay-button:disabled,
@@ -2271,18 +2308,34 @@ export default function PaymentPage() {
 
         .timer-card {
           text-align: center;
+          overflow: hidden;
           border-color: rgba(255, 48, 48, .35);
           background:
             radial-gradient(
               circle at 50% 0,
-              rgba(255,48,48,.09),
+              rgba(255,48,48,.12),
               transparent 50%
             ),
             #101010;
-          box-shadow: 0 0 35px rgba(255,48,48,.06);
+          box-shadow: 0 0 35px rgba(255,48,48,.08);
+        }
+
+        .timer-glow {
+          position: absolute;
+          width: 130px;
+          height: 130px;
+          left: calc(50% - 65px);
+          top: 20px;
+          border-radius: 50%;
+          background: rgba(255,48,48,.08);
+          filter: blur(30px);
+          animation: timerGlow 2s infinite;
+          pointer-events: none;
         }
 
         .timer-top {
+          position: relative;
+          z-index: 1;
           display: flex;
           justify-content: space-between;
           color: #666;
@@ -2292,6 +2345,8 @@ export default function PaymentPage() {
         }
 
         .timer-card strong {
+          position: relative;
+          z-index: 1;
           display: block;
           margin-top: 5px;
           color: #ff4b4b;
@@ -2301,12 +2356,17 @@ export default function PaymentPage() {
         }
 
         .timer-card p {
+          position: relative;
+          z-index: 1;
           margin: 5px 0 12px;
           color: #666;
           font-size: 9px;
+          line-height: 1.5;
         }
 
         .timer-bar {
+          position: relative;
+          z-index: 1;
           height: 4px;
           overflow: hidden;
           border-radius: 99px;
@@ -2342,6 +2402,7 @@ export default function PaymentPage() {
           border-radius: 11px;
           background: #080808;
           border: 1px solid #292929;
+          animation: slideUp .3s ease both;
         }
 
         .transaction-preview img {
@@ -2369,6 +2430,7 @@ export default function PaymentPage() {
         .upload-button:hover {
           border-color: #ff3030;
           background: #181010;
+          box-shadow: 0 0 25px rgba(255,48,48,.06);
         }
 
         .upload-button input {
@@ -2414,6 +2476,7 @@ export default function PaymentPage() {
           font-size: 26px;
           font-weight: 900;
           box-shadow: 0 0 30px rgba(32,182,107,.08);
+          animation: successPulse 2s infinite;
         }
 
         .submitted-card h2 {
@@ -2496,6 +2559,28 @@ export default function PaymentPage() {
           box-shadow: 0 0 18px #ff3030;
         }
 
+        .popup-orb {
+          position: absolute;
+          width: 110px;
+          height: 110px;
+          border-radius: 50%;
+          background: rgba(255,48,48,.07);
+          filter: blur(30px);
+          pointer-events: none;
+        }
+
+        .orb-a {
+          top: -45px;
+          left: -40px;
+          animation: popupOrb 4s infinite;
+        }
+
+        .orb-b {
+          right: -40px;
+          bottom: -45px;
+          animation: popupOrb 4s -2s infinite;
+        }
+
         .status-close {
           position: absolute;
           right: 12px;
@@ -2508,9 +2593,17 @@ export default function PaymentPage() {
           color: #aaa;
           font-size: 20px;
           cursor: pointer;
+          z-index: 3;
+        }
+
+        .status-close:hover {
+          color: #fff;
+          border-color: #ff3030;
         }
 
         .status-avatar {
+          position: relative;
+          z-index: 2;
           width: 76px;
           height: 76px;
           margin: 0 auto 13px;
@@ -2545,6 +2638,8 @@ export default function PaymentPage() {
         }
 
         .status-small {
+          position: relative;
+          z-index: 2;
           color: #666;
           font-size: 8px;
           font-weight: 950;
@@ -2553,12 +2648,16 @@ export default function PaymentPage() {
         }
 
         .status-popup h2 {
+          position: relative;
+          z-index: 2;
           margin: 0;
           font-size: 24px;
           letter-spacing: -.04em;
         }
 
         .status-pill {
+          position: relative;
+          z-index: 2;
           display: inline-flex;
           align-items: center;
           gap: 7px;
@@ -2584,6 +2683,7 @@ export default function PaymentPage() {
 
         .status-pill.pending span {
           background: #ffc04d;
+          box-shadow: 0 0 8px #ffc04d;
         }
 
         .status-pill.confirmed {
@@ -2594,6 +2694,7 @@ export default function PaymentPage() {
 
         .status-pill.confirmed span {
           background: #55e59a;
+          box-shadow: 0 0 8px #55e59a;
         }
 
         .status-pill.failed {
@@ -2604,9 +2705,12 @@ export default function PaymentPage() {
 
         .status-pill.failed span {
           background: #ff3030;
+          box-shadow: 0 0 8px #ff3030;
         }
 
         .status-message {
+          position: relative;
+          z-index: 2;
           margin: 17px auto;
           max-width: 310px;
           color: #777;
@@ -2615,6 +2719,8 @@ export default function PaymentPage() {
         }
 
         .status-order {
+          position: relative;
+          z-index: 2;
           display: inline-block;
           padding: 8px 11px;
           border-radius: 8px;
@@ -2626,6 +2732,8 @@ export default function PaymentPage() {
         }
 
         .check-again {
+          position: relative;
+          z-index: 2;
           width: 100%;
           min-height: 44px;
           margin-top: 15px;
@@ -2636,10 +2744,12 @@ export default function PaymentPage() {
           font-size: 9px;
           font-weight: 900;
           cursor: pointer;
+          transition: .2s ease;
         }
 
         .check-again:hover {
           border-color: #ff3030;
+          box-shadow: 0 0 20px rgba(255,48,48,.08);
         }
 
         .check-again:disabled {
@@ -2647,6 +2757,8 @@ export default function PaymentPage() {
         }
 
         .controlled-text {
+          position: relative;
+          z-index: 2;
           margin: 13px 0 0;
           color: #444;
           font-size: 8px;
@@ -2677,6 +2789,18 @@ export default function PaymentPage() {
           from {
             opacity: 0;
             transform: translateY(-15px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes cardEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
           }
 
           to {
@@ -2738,6 +2862,75 @@ export default function PaymentPage() {
 
           50% {
             transform: scale(1.045);
+          }
+        }
+
+        @keyframes floatOrb {
+          0%, 100% {
+            transform: translate(0, 0) scale(1);
+          }
+
+          50% {
+            transform: translate(25px, 18px) scale(1.08);
+          }
+        }
+
+        @keyframes badgeFloat {
+          0%, 100% {
+            transform: translateY(0);
+          }
+
+          50% {
+            transform: translateY(-3px);
+          }
+        }
+
+        @keyframes iconGlow {
+          0%, 100% {
+            box-shadow: 0 0 20px rgba(255,48,48,.06);
+          }
+
+          50% {
+            box-shadow: 0 0 30px rgba(255,48,48,.16);
+          }
+        }
+
+        @keyframes timerGlow {
+          0%, 100% {
+            opacity: .5;
+            transform: scale(.9);
+          }
+
+          50% {
+            opacity: 1;
+            transform: scale(1.15);
+          }
+        }
+
+        @keyframes successPulse {
+          0%, 100% {
+            box-shadow: 0 0 25px rgba(32,182,107,.06);
+          }
+
+          50% {
+            box-shadow: 0 0 38px rgba(32,182,107,.16);
+          }
+        }
+
+        @keyframes popupOrb {
+          0%, 100% {
+            transform: translate(0, 0);
+          }
+
+          50% {
+            transform: translate(15px, -12px);
+          }
+        }
+
+        @keyframes pulse {
+          50% {
+            transform: scale(.85);
+            opacity: .65;
           }
         }
 
