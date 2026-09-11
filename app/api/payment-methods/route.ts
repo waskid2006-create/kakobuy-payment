@@ -1,3 +1,4 @@
+import { cookies } from "next/headers"
 import { sql } from "@/app/db"
 
 export async function GET(request: Request) {
