@@ -31,12 +31,15 @@ const CHECK_ORDER_URL =
 type OrderItem = {
   productId?: number | string
   productName?: string
+  product_name?: string
   name?: string
   size?: string
   style?: string
   color?: string
   quantity?: number | string
   unitPrice?: number | string
+  unit_price?: number | string
+  total?: number | string
 }
 
 type Order = {
@@ -95,7 +98,10 @@ export default function PaymentPage() {
     useState<PaymentMethod | null>(null)
 
   const [paymentMethodLoading, setPaymentMethodLoading] =
-    useState(true)
+    useState(false)
+
+  const [selectedMethod, setSelectedMethod] =
+    useState("")
 
   const [paymentVisible, setPaymentVisible] =
     useState(false)
@@ -127,18 +133,12 @@ export default function PaymentPage() {
   const [uploadError, setUploadError] =
     useState("")
 
-  /*
-   * IMPORTANT:
-   * URL details are now loaded AFTER the page mounts.
-   * This prevents Page 3 from incorrectly saying
-   * "Missing order ID" when the URL contains ?orderId=29.
-   */
   const [details, setDetails] =
     useState<PageDetails>({
       orderId: "",
       email: "",
       total: "",
-      method: "bitcoin",
+      method: "",
     })
 
   /* ==================== READ URL ==================== */
@@ -167,8 +167,8 @@ export default function PaymentPage() {
       ""
 
     const method =
-      params.get("method") ||
-      "bitcoin"
+      params.get("method")?.trim().toLowerCase() ||
+      ""
 
     setDetails({
       orderId,
@@ -176,18 +176,21 @@ export default function PaymentPage() {
       total,
       method,
     })
+
+    /*
+     * Only use a method from the URL if one was
+     * deliberately supplied.
+     *
+     * Otherwise the buyer must choose.
+     */
+    if (method && methods.some((item) => item.id === method)) {
+      setSelectedMethod(method)
+    }
   }, [])
 
   /* ==================== LOAD ORDER ==================== */
 
   async function loadOrder() {
-    /*
-     * Do nothing until the URL has been read.
-     *
-     * This is different from the old version.
-     * We no longer immediately show "Missing order ID"
-     * during the first render.
-     */
     if (!details.orderId) {
       return
     }
@@ -252,18 +255,20 @@ export default function PaymentPage() {
 
   /* ==================== LOAD PAYMENT METHOD ==================== */
 
-  async function loadPaymentMethod() {
+  async function loadPaymentMethod(methodId: string) {
+    if (!methodId) {
+      return
+    }
+
     try {
       setPaymentMethodLoading(true)
-
-      const method =
-        details.method ||
-        "bitcoin"
+      setPaymentMethod(null)
+      setUploadError("")
 
       const response =
         await fetch(
           `/api/payment-methods?id=${encodeURIComponent(
-            method
+            methodId
           )}`,
           {
             method: "GET",
@@ -301,14 +306,21 @@ export default function PaymentPage() {
         "Payment method error:",
         err
       )
+
+      setPaymentMethod(null)
+
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load payment method."
+      )
     } finally {
       setPaymentMethodLoading(false)
     }
   }
 
   /*
-   * Load order and payment method only AFTER
-   * the URL details have been read.
+   * Load order after URL details are available.
    */
   useEffect(() => {
     if (!details.orderId) {
@@ -316,12 +328,24 @@ export default function PaymentPage() {
     }
 
     loadOrder()
-    loadPaymentMethod()
   }, [
     details.orderId,
     details.email,
-    details.method,
   ])
+
+  /*
+   * Load selected payment method only after
+   * the buyer chooses one.
+   */
+  useEffect(() => {
+    if (!selectedMethod) {
+      setPaymentMethod(null)
+      setPaymentMethodLoading(false)
+      return
+    }
+
+    loadPaymentMethod(selectedMethod)
+  }, [selectedMethod])
 
   /*
    * If there is genuinely no order ID after the
@@ -443,9 +467,60 @@ export default function PaymentPage() {
       ? order.items
       : []
 
+  /* ==================== CURRENT METHOD ==================== */
+
+  const currentMethod =
+    methods.find(
+      (item) =>
+        item.id === selectedMethod
+    )
+
+  const walletAddress =
+    paymentMethod?.wallet_address ||
+    paymentMethod?.address ||
+    ""
+
+  const qrImage =
+    paymentMethod?.qr_image ||
+    paymentMethod?.qr_image_url ||
+    ""
+
+  /* ==================== SELECT METHOD ==================== */
+
+  function chooseMethod(methodId: string) {
+    setSelectedMethod(methodId)
+
+    setPaymentVisible(false)
+    setTimeLeft(300)
+    setCopied(false)
+    setUploadError("")
+    setSubmissionMessage("")
+    setTransactionUploaded(false)
+
+    if (
+      transactionPreview &&
+      transactionPreview.startsWith("blob:")
+    ) {
+      URL.revokeObjectURL(
+        transactionPreview
+      )
+    }
+
+    setTransactionFile(null)
+    setTransactionPreview("")
+  }
+
   /* ==================== COPY WALLET ==================== */
 
   async function copyInfo() {
+    if (!selectedMethod) {
+      setUploadError(
+        "Please select a payment method first."
+      )
+
+      return
+    }
+
     const wallet =
       paymentMethod?.wallet_address ||
       paymentMethod?.address ||
@@ -484,6 +559,8 @@ export default function PaymentPage() {
               order?.email ||
               details.email ||
               "",
+            paymentMethod:
+              selectedMethod,
             wallet_copied: true,
           }),
         }
@@ -572,9 +649,6 @@ export default function PaymentPage() {
     )
     setTransactionUploaded(false)
 
-    /*
-     * Upload immediately after selection.
-     */
     await uploadTransactionImage(
       file
     )
@@ -711,6 +785,14 @@ export default function PaymentPage() {
       return
     }
 
+    if (!selectedMethod) {
+      setUploadError(
+        "Please select a payment method first."
+      )
+
+      return
+    }
+
     if (!transactionUploaded) {
       setUploadError(
         "Upload your transaction screenshot first."
@@ -772,6 +854,8 @@ export default function PaymentPage() {
           previous
             ? {
                 ...previous,
+                payment_method:
+                  selectedMethod,
                 transaction_submitted:
                   true,
                 transaction_submitted_at:
@@ -820,32 +904,6 @@ export default function PaymentPage() {
       setSubmitting(false)
     }
   }
-
-  /* ==================== PAYMENT METHOD DISPLAY ==================== */
-
-  const methodId =
-    details.method ||
-    order?.payment_method ||
-    "bitcoin"
-
-  const currentMethod =
-    methods.find(
-      (item) =>
-        item.id ===
-        String(
-          methodId
-        ).toLowerCase()
-    ) || methods[0]
-
-  const walletAddress =
-    paymentMethod?.wallet_address ||
-    paymentMethod?.address ||
-    ""
-
-  const qrImage =
-    paymentMethod?.qr_image ||
-    paymentMethod?.qr_image_url ||
-    ""
 
   /* ==================== CLEANUP ==================== */
 
@@ -924,21 +982,26 @@ export default function PaymentPage() {
         <header className="payment-header">
           <div>
             <h1>
-              {paymentMethod?.hero_heading ||
-                paymentMethod?.hero_title ||
-                "PAY WITH CRYPTO"}
+              {selectedMethod &&
+              paymentMethod?.hero_heading
+                ? paymentMethod.hero_heading
+                : "PAY WITH CRYPTO"}
             </h1>
 
             <p>
-              {paymentMethod?.hero_subtitle ||
-                "Secure and simple crypto payment"}
+              {selectedMethod &&
+              paymentMethod?.hero_subtitle
+                ? paymentMethod.hero_subtitle
+                : "Secure and simple crypto payment"}
             </p>
           </div>
 
-          <div className="method-badge">
-            {currentMethod.symbol}{" "}
-            {currentMethod.name}
-          </div>
+          {currentMethod && (
+            <div className="method-badge">
+              {currentMethod.symbol}{" "}
+              {currentMethod.name}
+            </div>
+          )}
         </header>
 
         {/* ==================== ORDER SUMMARY ==================== */}
@@ -997,7 +1060,9 @@ export default function PaymentPage() {
 
                     const unitPrice =
                       Number(
-                        item.unitPrice ||
+                        item.unitPrice ??
+                          item.unit_price ??
+                          item.total ??
                           0
                       )
 
@@ -1009,6 +1074,7 @@ export default function PaymentPage() {
                         <div className="item-main">
                           <strong>
                             {item.productName ||
+                              item.product_name ||
                               item.name ||
                               "Product"}
                           </strong>
@@ -1065,101 +1131,157 @@ export default function PaymentPage() {
           </div>
         </section>
 
-        {/* ==================== PAYMENT INFORMATION ==================== */}
+        {/* ==================== PAYMENT METHOD SELECTOR ==================== */}
 
-        {paymentMethodLoading ? (
-          <section className="payment-card">
-            <p>
-              Loading payment details...
-            </p>
-          </section>
-        ) : (
-          <section className="payment-card">
-            <div className="payment-card-title">
-              <span>
-                {
-                  currentMethod.symbol
-                }
-              </span>
+        <section className="payment-card">
+          <p className="section-label">
+            PAYMENT METHOD
+          </p>
 
-              <div>
-                <h2>
-                  {
-                    currentMethod.name
+          <h2 className="select-title">
+            Select your payment method
+          </h2>
+
+          <div className="method-grid">
+            {methods.map(
+              (method) => (
+                <button
+                  type="button"
+                  key={method.id}
+                  className={`method-option ${
+                    selectedMethod ===
+                    method.id
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    chooseMethod(
+                      method.id
+                    )
                   }
-                </h2>
+                >
+                  <span className="method-symbol">
+                    {method.symbol}
+                  </span>
 
-                <p>
-                  {paymentMethod?.information ||
-                    "Send the exact amount to the wallet below."}
-                </p>
-              </div>
-            </div>
-
-            {qrImage && (
-              <div className="qr-wrapper">
-                <img
-                  src={qrImage}
-                  alt={`${currentMethod.name} QR code`}
-                />
-              </div>
+                  <span>
+                    {method.name}
+                  </span>
+                </button>
+              )
             )}
+          </div>
 
-            <div className="wallet-box">
-              <span>
-                WALLET ADDRESS
-              </span>
+          <p className="method-warning">
+            !
+          </p>
 
-              <div className="wallet-row">
-                <code>
-                  {walletAddress ||
-                    "Wallet address unavailable"}
-                </code>
+          <p className="warning-text">
+            Please make sure you select the
+            correct payment method before
+            continuing.
+          </p>
+        </section>
 
-                <button
-                  type="button"
-                  onClick={
-                    copyInfo
-                  }
-                  disabled={
-                    !walletAddress
-                  }
-                >
-                  {copied
-                    ? "COPIED ✓"
-                    : "COPY"}
-                </button>
-              </div>
-            </div>
+        {/* ==================== SELECTED PAYMENT INFORMATION ==================== */}
 
-            <div className="amount-box">
-              <span>
-                SEND EXACTLY
-              </span>
+        {selectedMethod && (
+          <>
+            {paymentMethodLoading ? (
+              <section className="payment-card">
+                <p>
+                  Loading payment details...
+                </p>
+              </section>
+            ) : (
+              <section className="payment-card">
+                <div className="payment-card-title">
+                  <span>
+                    {
+                      currentMethod?.symbol
+                    }
+                  </span>
 
-              <strong>
-                {orderTotal.toFixed(
-                  2
+                  <div>
+                    <h2>
+                      {
+                        currentMethod?.name
+                      }
+                    </h2>
+
+                    <p>
+                      {paymentMethod?.information ||
+                        "Send the exact amount to the wallet below."}
+                    </p>
+                  </div>
+                </div>
+
+                {qrImage && (
+                  <div className="qr-wrapper">
+                    <img
+                      src={qrImage}
+                      alt={`${currentMethod?.name} QR code`}
+                    />
+                  </div>
                 )}
-              </strong>
-            </div>
 
-            {!paymentVisible &&
-              !order.transaction_submitted && (
-                <button
-                  type="button"
-                  className="pay-button"
-                  onClick={
-                    copyInfo
-                  }
-                  disabled={
-                    !walletAddress
-                  }
-                >
-                  COPY WALLET & START PAYMENT
-                </button>
-              )}
-          </section>
+                <div className="wallet-box">
+                  <span>
+                    WALLET ADDRESS
+                  </span>
+
+                  <div className="wallet-row">
+                    <code>
+                      {walletAddress ||
+                        "Wallet address unavailable"}
+                    </code>
+
+                    <button
+                      type="button"
+                      onClick={
+                        copyInfo
+                      }
+                      disabled={
+                        !walletAddress
+                      }
+                    >
+                      {copied
+                        ? "COPIED ✓"
+                        : "COPY"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="amount-box">
+                  <span>
+                    SEND EXACTLY
+                  </span>
+
+                  <strong>
+                    {orderTotal.toFixed(
+                      2
+                    )}
+                  </strong>
+                </div>
+
+                {!paymentVisible &&
+                  !order.transaction_submitted && (
+                    <button
+                      type="button"
+                      className="pay-button"
+                      onClick={
+                        copyInfo
+                      }
+                      disabled={
+                        !walletAddress
+                      }
+                    >
+                      COPY WALLET & START PAYMENT
+                    </button>
+                  )}
+              </section>
+            )}
+          </>
         )}
 
         {/* ==================== TIMER ==================== */}
@@ -1184,85 +1306,86 @@ export default function PaymentPage() {
 
         {/* ==================== SCREENSHOT ==================== */}
 
-        {!order.transaction_submitted && (
-          <section className="upload-card">
-            <p className="section-label">
-              PAYMENT SCREENSHOT
-            </p>
+        {selectedMethod &&
+          !order.transaction_submitted && (
+            <section className="upload-card">
+              <p className="section-label">
+                PAYMENT SCREENSHOT
+              </p>
 
-            <h2>
-              Upload your transaction
-              screenshot
-            </h2>
+              <h2>
+                Upload your transaction
+                screenshot
+              </h2>
 
-            <p className="upload-help">
-              After sending your payment,
-              upload the screenshot here.
-            </p>
+              <p className="upload-help">
+                After sending your payment,
+                upload the screenshot here.
+              </p>
 
-            {transactionPreview && (
-              <div className="transaction-preview">
-                <img
-                  src={
-                    transactionPreview
+              {transactionPreview && (
+                <div className="transaction-preview">
+                  <img
+                    src={
+                      transactionPreview
+                    }
+                    alt="Transaction preview"
+                  />
+                </div>
+              )}
+
+              <label className="upload-button">
+                {uploading
+                  ? "UPLOADING..."
+                  : transactionUploaded
+                  ? "CONFIRMED ✓"
+                  : "UPLOAD IMAGE"}
+
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={
+                    selectTransactionImage
                   }
-                  alt="Transaction preview"
+                  disabled={
+                    uploading ||
+                    submitting
+                  }
                 />
-              </div>
-            )}
+              </label>
 
-            <label className="upload-button">
-              {uploading
-                ? "UPLOADING..."
-                : transactionUploaded
-                ? "CONFIRMED ✓"
-                : "UPLOAD IMAGE"}
+              {uploadError && (
+                <div className="upload-error">
+                  {uploadError}
+                </div>
+              )}
 
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={
-                  selectTransactionImage
+              {submissionMessage && (
+                <div className="upload-success">
+                  {submissionMessage}
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="confirm-button"
+                onClick={
+                  completePaymentSubmission
                 }
                 disabled={
+                  submitting ||
                   uploading ||
-                  submitting
+                  !transactionUploaded
                 }
-              />
-            </label>
-
-            {uploadError && (
-              <div className="upload-error">
-                {uploadError}
-              </div>
-            )}
-
-            {submissionMessage && (
-              <div className="upload-success">
-                {submissionMessage}
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="confirm-button"
-              onClick={
-                completePaymentSubmission
-              }
-              disabled={
-                submitting ||
-                uploading ||
-                !transactionUploaded
-              }
-            >
-              {submitting
-                ? "SENDING TO ADMIN..."
-                : transactionUploaded
-                ? "CONFIRM PAYMENT"
-                : "UPLOAD IMAGE FIRST"}
-            </button>
-          </section>
-        )}
+              >
+                {submitting
+                  ? "SENDING TO ADMIN..."
+                  : transactionUploaded
+                  ? "CONFIRM PAYMENT"
+                  : "UPLOAD IMAGE FIRST"}
+              </button>
+            </section>
+          )}
 
         {/* ==================== SUBMITTED ==================== */}
 
@@ -1458,6 +1581,62 @@ export default function PaymentPage() {
         .no-items {
           color: #666;
           font-size: 11px;
+        }
+
+        .select-title {
+          margin: 0 0 13px;
+          font-size: 17px;
+        }
+
+        .method-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+        }
+
+        .method-option {
+          min-height: 75px;
+          border: 1px solid #292929;
+          border-radius: 11px;
+          background: #151515;
+          color: #aaa;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-size: 10px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .method-option:hover {
+          border-color: #555;
+        }
+
+        .method-option.selected {
+          border-color: #ff3030;
+          background: rgba(255, 48, 48, .08);
+          color: #fff;
+        }
+
+        .method-symbol {
+          font-size: 20px;
+          font-weight: 900;
+        }
+
+        .method-warning {
+          margin: 15px 0 2px;
+          color: #ff3030;
+          font-size: 18px;
+          font-weight: 900;
+        }
+
+        .warning-text {
+          margin: 0;
+          color: #ff5555;
+          font-size: 10px;
+          line-height: 1.5;
         }
 
         .payment-card-title {
@@ -1724,6 +1903,10 @@ export default function PaymentPage() {
 
           .method-badge {
             align-self: flex-start;
+          }
+
+          .method-grid {
+            grid-template-columns: repeat(2, 1fr);
           }
 
           .order-card-header {
