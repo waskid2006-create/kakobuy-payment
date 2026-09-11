@@ -1,3 +1,4 @@
+import { cookies } from "next/headers"
 import { sql } from "@/app/db"
 
 const VALID_STATUSES = [
@@ -5,6 +6,13 @@ const VALID_STATUSES = [
   "confirmed",
   "failed",
 ]
+
+/* ==================== ADMIN AUTH ==================== */
+
+async function isAdmin() {
+  const cookieStore = await cookies()
+  return cookieStore.get("kakobuy_admin")?.value === "authenticated"
+}
 
 /* ==================== 1. GET PAYMENT STATUS / ADMIN QUEUE ==================== */
 
@@ -22,6 +30,16 @@ export async function GET(request: Request) {
      * AND are still waiting for payment confirmation.
      */
     if (!orderId) {
+      if (!(await isAdmin())) {
+        return Response.json(
+          {
+            success: false,
+            error: "Unauthorized",
+          },
+          { status: 401 }
+        )
+      }
+
       const result = await sql`
         SELECT
           id,
@@ -229,6 +247,16 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    if (!(await isAdmin())) {
+      return Response.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      )
+    }
+
     const body = await request.json()
 
     const orderId = String(body?.orderId || "").trim()
