@@ -5,11 +5,11 @@ import { FormEvent, useState } from "react"
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  async function handleLogin(e: FormEvent) {
-    e.preventDefault()
+  async function handleLogin(event: FormEvent) {
+    event.preventDefault()
 
     setLoading(true)
     setError("")
@@ -46,118 +46,98 @@ export default function AdminLoginPage() {
       style={{
         minHeight: "100vh",
         background:
-          "radial-gradient(circle at top, rgba(255,0,0,.18), transparent 35%), #050505",
-        color: "white",
+          "radial-gradient(circle at top, rgba(255,0,0,.2), transparent 40%), #050505",
+        color: "#fff",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "20px",
+        padding: 20,
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: "420px",
+          maxWidth: 420,
           background: "#0d0d0d",
           border: "1px solid rgba(255,0,0,.35)",
-          borderRadius: "22px",
-          padding: "30px",
-          boxShadow: "0 0 45px rgba(255,0,0,.12)",
+          borderRadius: 22,
+          padding: 30,
+          boxShadow: "0 0 45px rgba(255,0,0,.15)",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: "28px" }}>
-          <div
-            style={{
-              fontSize: "30px",
-              fontWeight: 900,
-              letterSpacing: "2px",
-            }}
-          >
-            KAKOBUY
-          </div>
+        <h1
+          style={{
+            textAlign: "center",
+            margin: 0,
+            fontSize: 30,
+            fontWeight: 900,
+            letterSpacing: 2,
+          }}
+        >
+          KAKOBUY
+        </h1>
 
-          <div
-            style={{
-              marginTop: "8px",
-              color: "#aaa",
-              fontSize: "14px",
-            }}
-          >
-            Administrator Access
-          </div>
-        </div>
+        <p
+          style={{
+            textAlign: "center",
+            color: "#999",
+            marginBottom: 30,
+          }}
+        >
+          Administrator Access
+        </p>
 
         <form onSubmit={handleLogin}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-              color: "#ccc",
-            }}
-          >
-            Username
-          </label>
+          <label>Username</label>
 
           <input
-            type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
             required
+            autoComplete="username"
             style={{
               width: "100%",
               boxSizing: "border-box",
-              padding: "14px",
-              marginBottom: "18px",
-              borderRadius: "12px",
+              marginTop: 8,
+              marginBottom: 18,
+              padding: 14,
+              borderRadius: 12,
               border: "1px solid #333",
               background: "#151515",
-              color: "white",
-              outline: "none",
+              color: "#fff",
             }}
           />
 
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-              color: "#ccc",
-            }}
-          >
-            Password
-          </label>
+          <label>Password</label>
 
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
             required
+            autoComplete="current-password"
             style={{
               width: "100%",
               boxSizing: "border-box",
-              padding: "14px",
-              marginBottom: "18px",
-              borderRadius: "12px",
+              marginTop: 8,
+              marginBottom: 18,
+              padding: 14,
+              borderRadius: 12,
               border: "1px solid #333",
               background: "#151515",
-              color: "white",
-              outline: "none",
+              color: "#fff",
             }}
           />
 
           {error && (
             <div
               style={{
+                color: "#ff5555",
                 background: "rgba(255,0,0,.1)",
                 border: "1px solid rgba(255,0,0,.3)",
-                color: "#ff6b6b",
-                padding: "12px",
-                borderRadius: "10px",
-                marginBottom: "16px",
-                fontSize: "14px",
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 16,
               }}
             >
               {error}
@@ -169,14 +149,13 @@ export default function AdminLoginPage() {
             disabled={loading}
             style={{
               width: "100%",
-              padding: "14px",
-              border: "none",
-              borderRadius: "12px",
+              padding: 14,
+              border: 0,
+              borderRadius: 12,
               background: "#e00000",
-              color: "white",
+              color: "#fff",
               fontWeight: 800,
-              fontSize: "15px",
-              cursor: loading ? "wait" : "pointer",
+              fontSize: 15,
             }}
           >
             {loading ? "LOGGING IN..." : "LOGIN"}
@@ -185,4 +164,4 @@ export default function AdminLoginPage() {
       </div>
     </main>
   )
-            }
+}
