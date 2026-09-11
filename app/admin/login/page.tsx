@@ -1,166 +1,151 @@
 "use client"
 
-import { FormEvent, useState } from "react"
+import { useState } from "react"
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  async function handleLogin(event: FormEvent) {
+  async function handleLogin(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault()
 
     setLoading(true)
     setError("")
 
     try {
-      const response = await fetch("/api/admin-login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
-      })
+      const response = await fetch(
+        "/api/admin-login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            username,
+            password,
+          }),
+        }
+      )
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok || !data.success) {
-        setError(data.error || "Login failed.")
+        setError(
+          data?.error ||
+            "Incorrect username or password."
+        )
         return
       }
 
+      // Give the browser a moment to store the cookie.
       window.location.href = "/admin"
-    } catch {
-      setError("Unable to connect to the server.")
+    } catch (error) {
+      console.error(error)
+
+      setError(
+        "Unable to connect to the admin login."
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top, rgba(255,0,0,.2), transparent 40%), #050505",
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 420,
-          background: "#0d0d0d",
-          border: "1px solid rgba(255,0,0,.35)",
-          borderRadius: 22,
-          padding: 30,
-          boxShadow: "0 0 45px rgba(255,0,0,.15)",
-        }}
-      >
-        <h1
-          style={{
-            textAlign: "center",
-            margin: 0,
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: 2,
-          }}
-        >
-          KAKOBUY
-        </h1>
-
-        <p
-          style={{
-            textAlign: "center",
-            color: "#999",
-            marginBottom: 30,
-          }}
-        >
-          Administrator Access
-        </p>
-
-        <form onSubmit={handleLogin}>
-          <label>Username</label>
-
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            autoComplete="username"
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              marginTop: 8,
-              marginBottom: 18,
-              padding: 14,
-              borderRadius: 12,
-              border: "1px solid #333",
-              background: "#151515",
-              color: "#fff",
-            }}
-          />
-
-          <label>Password</label>
-
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              marginTop: 8,
-              marginBottom: 18,
-              padding: 14,
-              borderRadius: 12,
-              border: "1px solid #333",
-              background: "#151515",
-              color: "#fff",
-            }}
-          />
-
-          {error && (
-            <div
-              style={{
-                color: "#ff5555",
-                background: "rgba(255,0,0,.1)",
-                border: "1px solid rgba(255,0,0,.3)",
-                borderRadius: 10,
-                padding: 12,
-                marginBottom: 16,
-              }}
-            >
-              {error}
+    <main className="min-h-screen bg-black px-5 text-white">
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="w-full max-w-md">
+          {/* LOGO / BRAND */}
+          <div className="mb-8 text-center">
+            <div className="text-4xl font-black tracking-[0.25em] text-red-500">
+              KAKOBUY
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: 14,
-              border: 0,
-              borderRadius: 12,
-              background: "#e00000",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 15,
-            }}
-          >
-            {loading ? "LOGGING IN..." : "LOGIN"}
-          </button>
-        </form>
+            <p className="mt-2 text-sm text-gray-500">
+              Administrator Login
+            </p>
+          </div>
+
+          {/* LOGIN BOX */}
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl shadow-red-950/20 sm:p-8">
+            <h1 className="text-2xl font-black">
+              Admin Login
+            </h1>
+
+            <p className="mt-2 text-sm text-gray-500">
+              Sign in to manage Kakobuy.
+            </p>
+
+            {error && (
+              <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {error}
+              </div>
+            )}
+
+            <form
+              onSubmit={handleLogin}
+              className="mt-6 space-y-5"
+            >
+              <div>
+                <label className="mb-2 block text-sm font-semibold">
+                  Username
+                </label>
+
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  autoComplete="username"
+                  placeholder="Admin username"
+                  required
+                  className="w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none transition focus:border-red-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold">
+                  Password
+                </label>
+
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  placeholder="Admin password"
+                  required
+                  className="w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none transition focus:border-red-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-red-600 py-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? "LOGGING IN..." : "LOGIN"}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() =>
+                (window.location.href = "/")
+              }
+              className="mt-3 w-full rounded-xl border border-zinc-700 py-4 font-semibold text-gray-400 transition hover:bg-zinc-900 hover:text-white"
+            >
+              GO BACK
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   )
