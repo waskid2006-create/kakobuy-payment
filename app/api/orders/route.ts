@@ -37,77 +37,59 @@ export async function GET(request: Request) {
       )
     }
 
-    /*
-     * First try ID + email when an email is supplied.
-     */
-    if (email) {
-      const emailResult = await sql`
-        SELECT
-          id,
-          full_name,
-          email,
-          phone,
-          country,
-          address,
-          city,
-          state,
-          items,
-          total,
-          payment_method,
-          payment_status,
-          wallet_copied,
-          wallet_copied_at,
-          transaction_image,
-          transaction_submitted,
-          transaction_submitted_at,
-          created_at
-        FROM orders
-        WHERE id = ${numericId}
-          AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
-        LIMIT 1
-      `
+    const orders = email
+      ? await sql`
+          SELECT
+            id,
+            full_name,
+            email,
+            phone,
+            country,
+            address,
+            city,
+            state,
+            total,
+            payment_method,
+            payment_status,
+            wallet_copied,
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at,
+            updated_at
+          FROM orders
+          WHERE id = ${numericId}
+            AND LOWER(TRIM(email)) =
+                LOWER(TRIM(${email}))
+          LIMIT 1
+        `
+      : await sql`
+          SELECT
+            id,
+            full_name,
+            email,
+            phone,
+            country,
+            address,
+            city,
+            state,
+            total,
+            payment_method,
+            payment_status,
+            wallet_copied,
+            wallet_copied_at,
+            transaction_image,
+            transaction_submitted,
+            transaction_submitted_at,
+            created_at,
+            updated_at
+          FROM orders
+          WHERE id = ${numericId}
+          LIMIT 1
+        `
 
-      if (emailResult.length > 0) {
-        return NextResponse.json({
-          ok: true,
-          order: emailResult[0],
-        })
-      }
-    }
-
-    /*
-     * Fallback:
-     * The order ID is unique, so load the order by ID.
-     *
-     * This also prevents a harmless difference in email
-     * formatting from causing "Order not found".
-     */
-    const result = await sql`
-      SELECT
-        id,
-        full_name,
-        email,
-        phone,
-        country,
-        address,
-        city,
-        state,
-        items,
-        total,
-        payment_method,
-        payment_status,
-        wallet_copied,
-        wallet_copied_at,
-        transaction_image,
-        transaction_submitted,
-        transaction_submitted_at,
-        created_at
-      FROM orders
-      WHERE id = ${numericId}
-      LIMIT 1
-    `
-
-    if (result.length === 0) {
+    if (orders.length === 0) {
       return NextResponse.json(
         {
           ok: false,
@@ -117,12 +99,36 @@ export async function GET(request: Request) {
       )
     }
 
+    const order = orders[0]
+
+    const items = await sql`
+      SELECT
+        order_id,
+        product_id,
+        product_name,
+        size,
+        style,
+        color,
+        quantity,
+        unit_price,
+        total
+      FROM order_items
+      WHERE order_id = ${numericId}
+      ORDER BY id ASC
+    `
+
     return NextResponse.json({
       ok: true,
-      order: result[0],
+      order: {
+        ...order,
+        items,
+      },
     })
   } catch (error) {
-    console.error("Order GET error:", error)
+    console.error(
+      "Order GET error:",
+      error
+    )
 
     return NextResponse.json(
       {
@@ -131,119 +137,6 @@ export async function GET(request: Request) {
           error instanceof Error
             ? error.message
             : "Unable to load order.",
-      },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-
-    const {
-      fullName,
-      email,
-      phone,
-      country,
-      address,
-      city,
-      state,
-      items,
-      total,
-    } = body
-
-    if (
-      !fullName ||
-      !email ||
-      !phone ||
-      !country ||
-      !address ||
-      !city ||
-      !state
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Please complete all delivery information.",
-        },
-        { status: 400 }
-      )
-    }
-
-    if (
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Your cart is empty.",
-        },
-        { status: 400 }
-      )
-    }
-
-    const orderTotal = Number(total)
-
-    if (
-      !Number.isFinite(orderTotal) ||
-      orderTotal < 0
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Invalid order total.",
-        },
-        { status: 400 }
-      )
-    }
-
-    const result = await sql`
-      INSERT INTO orders (
-        full_name,
-        email,
-        phone,
-        country,
-        address,
-        city,
-        state,
-        items,
-        total,
-        payment_status,
-        wallet_copied
-      )
-      VALUES (
-        ${fullName},
-        ${email},
-        ${phone},
-        ${country},
-        ${address},
-        ${city},
-        ${state},
-        ${JSON.stringify(items)}::jsonb,
-        ${orderTotal},
-        'pending',
-        false
-      )
-      RETURNING id
-    `
-
-    return NextResponse.json({
-      ok: true,
-      orderId: result[0].id,
-    })
-  } catch (error) {
-    console.error("Order API error:", error)
-
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to create order.",
       },
       { status: 500 }
     )
