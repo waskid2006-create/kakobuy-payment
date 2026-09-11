@@ -1,59 +1,8 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react"
+import { useEffect, useMemo, useState } from "react"
 
-type PaymentStatus =
-  | "pending"
-  | "confirmed"
-  | "failed"
-
-type PaymentMethod = {
-  id?: string
-  name?: string
-  symbol?: string
-  wallet_address?: string
-  address?: string
-  qr_image?: string | null
-  information?: string
-  description?: string
-  hero_title?: string
-  hero_subtitle?: string
-  footer_text?: string
-}
-
-type Order = {
-  id: number
-  full_name?: string
-  email?: string
-  phone?: string
-  country?: string
-  address?: string
-  city?: string
-  state?: string
-  items?: any[]
-  total?: number | string
-  payment_method?: string
-  payment_status?: PaymentStatus
-  wallet_copied?: boolean
-  wallet_copied_at?: string | null
-  transaction_image?: string | null
-  transaction_submitted?: boolean
-  transaction_submitted_at?: string | null
-  created_at?: string
-}
-
-const CHECK_ORDER_URL =
-  "https://kakobuy-check-order.vercel.app/"
-
-const HOME_URL =
-  "https://kakobuy-mini.vercel.app/"
-
-const PAYMENT_METHODS = [
+const methods = [
   {
     id: "bitcoin",
     name: "Bitcoin",
@@ -76,1069 +25,574 @@ const PAYMENT_METHODS = [
   },
 ]
 
-function getOrderDetails() {
-  if (typeof window === "undefined") {
-    return null
-  }
+const CHECK_ORDER_URL =
+  "https://kakobuy-check-order.vercel.app/"
 
-  const params = new URLSearchParams(
-    window.location.search
-  )
-
-  const orderId =
-    params.get("orderId") ||
-    params.get("id")
-
-  const email =
-    params.get("email") || ""
-
-  if (!orderId) {
-    return null
-  }
-
-  return {
-    orderId,
-    email,
-  }
+type OrderItem = {
+  productId?: number | string
+  productName?: string
+  name?: string
+  size?: string
+  style?: string
+  color?: string
+  quantity?: number | string
+  unitPrice?: number | string
 }
 
-function formatMoney(
-  value: number | string | undefined
-) {
-  const amount = Number(value || 0)
-
-  return amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+type Order = {
+  id: number | string
+  full_name?: string
+  email?: string
+  phone?: string
+  country?: string
+  address?: string
+  city?: string
+  state?: string
+  items?: OrderItem[]
+  total: number | string
+  payment_method?: string
+  payment_status?: "pending" | "confirmed" | "failed"
+  wallet_copied?: boolean
+  transaction_image?: string | null
+  transaction_submitted?: boolean
+  transaction_submitted_at?: string | null
+  created_at?: string
 }
 
-function safeText(value: unknown) {
-  if (
-    value === null ||
-    value === undefined
-  ) {
-    return ""
-  }
-
-  return String(value)
+type PaymentMethod = {
+  id?: string
+  name?: string
+  symbol?: string
+  information?: string
+  wallet_address?: string
+  address?: string
+  qr_image?: string | null
+  qr_image_url?: string | null
+  hero_title?: string
+  hero_heading?: string
+  hero_subtitle?: string
+  footer_text?: string
 }
 
 export default function PaymentPage() {
-  const [selected, setSelected] =
-    useState("bitcoin")
-
-  const [method, setMethod] =
-    useState<PaymentMethod | null>(null)
-
   const [order, setOrder] =
     useState<Order | null>(null)
 
-  const [paymentStatus, setPaymentStatus] =
-    useState<PaymentStatus>("pending")
-
-  const [loadingMethod, setLoadingMethod] =
+  const [loading, setLoading] =
     useState(true)
-
-  const [loadingOrder, setLoadingOrder] =
-    useState(true)
-
-  const [checkingStatus, setCheckingStatus] =
-    useState(false)
-
-  const [copied, setCopied] =
-    useState(false)
-
-  const [statusVisible, setStatusVisible] =
-    useState(false)
 
   const [error, setError] =
     useState("")
 
-  /* ==================== 1. TIMER SETTINGS ==================== */
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethod | null>(null)
+
+  const [paymentMethodLoading, setPaymentMethodLoading] =
+    useState(true)
+
+  const [paymentVisible, setPaymentVisible] =
+    useState(false)
+
   const [timeLeft, setTimeLeft] =
     useState(300)
 
-  const [timerStarted, setTimerStarted] =
+  const [copied, setCopied] =
     useState(false)
 
-  /* PAYMENT SUBMISSION */
-  const [
-    paymentPanelVisible,
-    setPaymentPanelVisible,
-  ] = useState(false)
+  const [transactionFile, setTransactionFile] =
+    useState<File | null>(null)
 
-  const [
-    transactionFile,
-    setTransactionFile,
-  ] = useState<File | null>(null)
+  const [transactionPreview, setTransactionPreview] =
+    useState("")
 
-  const [
-    transactionPreview,
-    setTransactionPreview,
-  ] = useState("")
+  const [transactionUploaded, setTransactionUploaded] =
+    useState(false)
 
-  const [
-    uploadingTransaction,
-    setUploadingTransaction,
-  ] = useState(false)
+  const [uploading, setUploading] =
+    useState(false)
 
-  const [
-    transactionUploaded,
-    setTransactionUploaded,
-  ] = useState(false)
+  const [submitting, setSubmitting] =
+    useState(false)
 
-  const [
-    submittingTransaction,
-    setSubmittingTransaction,
-  ] = useState(false)
+  const [submissionMessage, setSubmissionMessage] =
+    useState("")
 
-  const orderDetails = useMemo(
-    () => getOrderDetails(),
-    []
-  )
+  const [uploadError, setUploadError] =
+    useState("")
 
-  /*
-   * LOAD PAYMENT METHOD
-   */
-  const loadPaymentMethod =
-    useCallback(async () => {
-      setLoadingMethod(true)
-
-      try {
-        const response =
-          await fetch(
-            `/api/payment-methods?id=${encodeURIComponent(
-              selected
-            )}`,
-            {
-              cache: "no-store",
-            }
-          )
-
-        const data =
-          await response.json()
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              "Unable to load payment method."
-          )
-        }
-
-        const paymentMethod =
-          data?.paymentMethod ||
-          data?.method ||
-          data
-
-        setMethod(
-          paymentMethod || null
-        )
-      } catch (err) {
-        console.error(
-          "Payment method error:",
-          err
-        )
-
-        setMethod(null)
-      } finally {
-        setLoadingMethod(false)
-      }
-    }, [selected])
-
-  /*
-   * LOAD ORDER
-   */
-  const loadOrder =
-    useCallback(async () => {
-      const details =
-        getOrderDetails()
-
-      if (
-        !details ||
-        !details.orderId
-      ) {
-        setLoadingOrder(false)
-        return
-      }
-
-      setLoadingOrder(true)
-
-      try {
-        const query =
-          new URLSearchParams()
-
-        query.set(
-          "id",
-          details.orderId
-        )
-
-        if (details.email) {
-          query.set(
-            "email",
-            details.email
-          )
-        }
-
-        const response =
-          await fetch(
-            `/api/orders?${query.toString()}`,
-            {
-              cache: "no-store",
-            }
-          )
-
-        const data =
-          await response.json()
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              "Unable to load order."
-          )
-        }
-
-        const loadedOrder =
-          data?.order || data
-
-        if (loadedOrder) {
-          setOrder(
-            loadedOrder
-          )
-
-          setPaymentStatus(
-            loadedOrder.payment_status ||
-              "pending"
-          )
-        }
-      } catch (err) {
-        console.error(
-          "Order loading error:",
-          err
-        )
-
-        setError(
-          "We couldn't load this order."
-        )
-      } finally {
-        setLoadingOrder(false)
-      }
-    }, [])
-
-  useEffect(() => {
-    loadPaymentMethod()
-  }, [loadPaymentMethod])
-
-  useEffect(() => {
-    loadOrder()
-  }, [loadOrder])
-
-  /* ==================== 2. RESUME TIMER AFTER REFRESH ==================== */
-  useEffect(() => {
-    const details =
-      getOrderDetails()
-
-    if (!details?.orderId) {
-      return
-    }
-
-    const storageKey =
-      `kakobuy-payment-timer-${details.orderId}`
-
-    const stored =
-      sessionStorage.getItem(
-        storageKey
-      )
-
-    if (!stored) {
-      return
-    }
-
-    const expiresAt =
-      Number(stored)
-
-    if (
-      !Number.isFinite(
-        expiresAt
-      )
-    ) {
-      sessionStorage.removeItem(
-        storageKey
-      )
-      return
-    }
-
-    const remaining =
-      Math.ceil(
-        (expiresAt - Date.now()) /
-          1000
-      )
-
-    if (remaining <= 0) {
-      sessionStorage.removeItem(
-        storageKey
-      )
-
-      window.location.href =
-        CHECK_ORDER_URL
-
-      return
-    }
-
-    setTimeLeft(remaining)
-    setTimerStarted(true)
-  }, [
-    orderDetails?.orderId,
-  ])
-
-  /* ==================== 3. 5-MINUTE COUNTDOWN ==================== */
-  useEffect(() => {
-    const details =
-      getOrderDetails()
-
-    if (!details?.orderId) {
-      return
-    }
-
-    if (!timerStarted) {
-      return
-    }
-
-    const storageKey =
-      `kakobuy-payment-timer-${details.orderId}`
-
-    const stored =
-      sessionStorage.getItem(
-        storageKey
-      )
-
-    if (!stored) {
-      return
-    }
-
-    const expiresAt =
-      Number(stored)
-
-    if (
-      !Number.isFinite(
-        expiresAt
-      )
-    ) {
-      sessionStorage.removeItem(
-        storageKey
-      )
-      return
-    }
-
-    const updateTimer = () => {
-      const next =
-        Math.max(
-          0,
-          Math.ceil(
-            (expiresAt - Date.now()) /
-              1000
-          )
-        )
-
-      setTimeLeft(next)
-
-      if (next <= 0) {
-        sessionStorage.removeItem(
-          storageKey
-        )
-
-        window.location.href =
-          CHECK_ORDER_URL
+  const details = useMemo(() => {
+    if (typeof window === "undefined") {
+      return {
+        orderId: "",
+        email: "",
+        total: "",
+        method: "",
       }
     }
 
-    updateTimer()
+    const params = new URLSearchParams(
+      window.location.search
+    )
 
-    const interval =
-      window.setInterval(
-        updateTimer,
-        250
-      )
-
-    return () => {
-      window.clearInterval(
-        interval
-      )
-    }
-  }, [
-    timerStarted,
-    orderDetails?.orderId,
-  ])
-
-  /*
-   * BACKGROUND PAYMENT STATUS
-   */
-  useEffect(() => {
-    const details =
-      getOrderDetails()
-
-    if (!details?.orderId) {
-      return
-    }
-
-    let active = true
-
-    const checkStatus =
-      async () => {
-        try {
-          const query =
-            new URLSearchParams()
-
-          query.set(
-            "orderId",
-            details.orderId
-          )
-
-          if (details.email) {
-            query.set(
-              "email",
-              details.email
-            )
-          }
-
-          const response =
-            await fetch(
-              `/api/payment-status?${query.toString()}`,
-              {
-                cache: "no-store",
-              }
-            )
-
-          const data =
-            await response.json()
-
-          if (
-            !response.ok ||
-            !data.order ||
-            !active
-          ) {
-            return
-          }
-
-          const newStatus =
-            (data.order
-              .payment_status ||
-              "pending") as PaymentStatus
-
-          setPaymentStatus(
-            newStatus
-          )
-
-          setOrder(
-            (previous) => ({
-              ...(previous || {}),
-              ...data.order,
-            })
-          )
-        } catch (err) {
-          console.error(
-            "Background status error:",
-            err
-          )
-        }
-      }
-
-    checkStatus()
-
-    const interval =
-      window.setInterval(
-        checkStatus,
-        3000
-      )
-
-    return () => {
-      active = false
-      window.clearInterval(
-        interval
-      )
+    return {
+      orderId:
+        params.get("orderId") ||
+        params.get("id") ||
+        "",
+      email:
+        params.get("email")?.trim() ||
+        "",
+      total:
+        params.get("total") || "",
+      method:
+        params.get("method") ||
+        "bitcoin",
     }
   }, [])
 
-  /*
-   * CHECK PAYMENT STATUS
-   */
-  async function checkPaymentStatus() {
-    const details =
-      getOrderDetails()
+  /* ==================== LOAD ORDER ==================== */
 
-    if (!details?.orderId) {
-      setError(
-        "No order was found."
-      )
+  async function loadOrder() {
+    if (!details.orderId) {
+      setError("Missing order ID.")
+      setLoading(false)
       return
     }
 
-    setCheckingStatus(true)
-    setError("")
-
     try {
-      const query =
-        new URLSearchParams()
+      setError("")
 
-      query.set(
-        "orderId",
+      const params = new URLSearchParams()
+
+      params.set(
+        "id",
         details.orderId
       )
 
       if (details.email) {
-        query.set(
+        params.set(
           "email",
           details.email
         )
       }
 
-      const response =
-        await fetch(
-          `/api/payment-status?${query.toString()}`,
-          {
-            cache: "no-store",
-          }
-        )
+      const response = await fetch(
+        `/api/orders?${params.toString()}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      )
 
-      const data =
-        await response.json()
+      const data = await response.json()
 
-      if (
-        !response.ok ||
-        !data.order
-      ) {
+      if (!response.ok || !data?.order) {
         throw new Error(
           data?.error ||
-            "Unable to check payment status."
+            "Unable to load this order."
         )
       }
 
-      const newStatus =
-        (data.order
-          .payment_status ||
-          "pending") as PaymentStatus
-
-      setPaymentStatus(
-        newStatus
-      )
-
-      setOrder(
-        (previous) => ({
-          ...(previous || {}),
-          ...data.order,
-        })
-      )
-
-      setStatusVisible(true)
+      setOrder(data.order)
     } catch (err) {
       console.error(
-        "Check status error:",
+        "Load order error:",
         err
       )
 
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to check payment status."
+          : "Unable to load this order."
       )
     } finally {
-      setCheckingStatus(false)
+      setLoading(false)
     }
   }
 
-  /* ==================== 4. START 5-MINUTE TIMER WHEN COPY IS PRESSED ==================== */
-  async function copyInfo() {
-    const wallet =
-      method?.wallet_address ||
-      method?.address ||
-      ""
+  /* ==================== LOAD PAYMENT METHOD ==================== */
 
-    if (!wallet) {
-      setError(
-        "Wallet address is not available."
-      )
-      return
-    }
-
-    const details =
-      getOrderDetails()
-
-    if (!details?.orderId) {
-      setError(
-        "Order could not be identified."
-      )
-      return
-    }
-
-    const storageKey =
-      `kakobuy-payment-timer-${details.orderId}`
-
-    const expiresAt =
-      Date.now() + 5 * 60 * 1000
-
-    sessionStorage.setItem(
-      storageKey,
-      String(expiresAt)
-    )
-
-    /*
-     * IMPORTANT:
-     * These states are set BEFORE
-     * clipboard work.
-     */
-    setTimerStarted(true)
-    setTimeLeft(300)
-    setPaymentPanelVisible(true)
-    setError("")
-
-    /*
-     * COPY WALLET
-     */
+  async function loadPaymentMethod() {
     try {
-      if (
-        navigator.clipboard &&
-        window.isSecureContext
-      ) {
-        await navigator.clipboard.writeText(
-          wallet
-        )
-      } else {
-        const textArea =
-          document.createElement(
-            "textarea"
-          )
+      setPaymentMethodLoading(true)
 
-        textArea.value = wallet
-        textArea.style.position =
-          "fixed"
-        textArea.style.opacity =
-          "0"
-        textArea.style.pointerEvents =
-          "none"
+      const method =
+        details.method || "bitcoin"
 
-        document.body.appendChild(
-          textArea
-        )
+      const response = await fetch(
+        `/api/payment-methods?id=${encodeURIComponent(
+          method
+        )}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      )
 
-        textArea.focus()
-        textArea.select()
+      const text =
+        await response.text()
 
-        document.execCommand("copy")
+      let data: any = {}
 
-        document.body.removeChild(
-          textArea
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Invalid payment method response."
         )
       }
 
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to load payment method."
+        )
+      }
+
+      setPaymentMethod(
+        data?.paymentMethod ||
+          data?.method ||
+          data
+      )
+    } catch (err) {
+      console.error(
+        "Payment method error:",
+        err
+      )
+    } finally {
+      setPaymentMethodLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadOrder()
+    loadPaymentMethod()
+  }, [])
+
+  /* ==================== REFRESH ORDER ==================== */
+
+  useEffect(() => {
+    if (!order?.id) {
+      return
+    }
+
+    const interval =
+      window.setInterval(() => {
+        loadOrder()
+      }, 3000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [order?.id])
+
+  /* ==================== FIVE MINUTE TIMER ==================== */
+
+  useEffect(() => {
+    if (!paymentVisible) {
+      return
+    }
+
+    if (timeLeft <= 0) {
+      window.location.href =
+        CHECK_ORDER_URL
+
+      return
+    }
+
+    const timer =
+      window.setInterval(() => {
+        setTimeLeft((previous) => {
+          if (previous <= 1) {
+            window.clearInterval(timer)
+            return 0
+          }
+
+          return previous - 1
+        })
+      }, 1000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [paymentVisible, timeLeft])
+
+  /* ==================== FORMAT TIMER ==================== */
+
+  const minutes =
+    Math.floor(timeLeft / 60)
+
+  const seconds =
+    timeLeft % 60
+
+  const timerText =
+    `${String(minutes).padStart(2, "0")}:${String(
+      seconds
+    ).padStart(2, "0")}`
+
+  /* ==================== TOTAL ==================== */
+
+  const orderTotal =
+    Number(order?.total ?? details.total ?? 0)
+
+  /* ==================== ITEMS ==================== */
+
+  const items =
+    Array.isArray(order?.items)
+      ? order.items
+      : []
+
+  /* ==================== COPY WALLET ==================== */
+
+  async function copyInfo() {
+    const wallet =
+      paymentMethod?.wallet_address ||
+      paymentMethod?.address ||
+      ""
+
+    if (!wallet) {
+      setUploadError(
+        "Payment wallet address is not available."
+      )
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        wallet
+      )
+
       setCopied(true)
+      setPaymentVisible(true)
+      setTimeLeft(300)
+      setUploadError("")
+
+      await fetch(
+        "/api/payment-status",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            orderId: String(order?.id),
+            email:
+              order?.email ||
+              details.email ||
+              "",
+            wallet_copied: true,
+          }),
+        }
+      )
 
       window.setTimeout(() => {
         setCopied(false)
-      }, 2000)
+      }, 2500)
     } catch (err) {
       console.error(
         "Copy wallet error:",
         err
       )
 
-      setError(
-        "Copy was not available, but the payment timer has started."
-      )
-    }
-
-    /*
-     * SAVE WALLET-COPIED STATUS
-     */
-    try {
-      const response =
-        await fetch(
-          "/api/payment-status",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              orderId:
-                details.orderId,
-              email:
-                details.email ||
-                undefined,
-              wallet_copied: true,
-              paymentMethod:
-                selected,
-            }),
-          }
-        )
-
-      if (!response.ok) {
-        console.error(
-          "Could not save wallet copied status."
-        )
-      }
-    } catch (err) {
-      console.error(
-        "Wallet copied API error:",
-        err
+      setUploadError(
+        "Unable to copy the wallet address."
       )
     }
   }
 
-  /* ==================== 17. SELECT + UPLOAD TRANSACTION SCREENSHOT ==================== */
-async function selectTransactionImage(
-  event: React.ChangeEvent<HTMLInputElement>
-) {
-  const file =
-    event.target.files?.[0]
+  /* ==================== SELECT SCREENSHOT ==================== */
 
-  if (!file) {
-    return
-  }
+  async function selectTransactionImage(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file =
+      event.target.files?.[0]
 
-  /* ==================== 18. CHECK FILE TYPE ==================== */
-  if (
-    ![
+    if (!file) {
+      return
+    }
+
+    setUploadError("")
+    setSubmissionMessage("")
+
+    const allowedTypes = [
       "image/jpeg",
       "image/png",
       "image/webp",
-    ].includes(file.type)
-  ) {
-    setError(
-      "Only JPG, PNG, and WEBP images are allowed."
-    )
+    ]
 
-    event.target.value = ""
-    return
-  }
-
-  /* ==================== 19. CHECK FILE SIZE ==================== */
-  if (
-    file.size <= 0 ||
-    file.size > 5 * 1024 * 1024
-  ) {
-    setError(
-      "Image must be smaller than 5 MB."
-    )
-
-    event.target.value = ""
-    return
-  }
-
-  /* ==================== 20. GET ORDER ==================== */
-  const details =
-    getOrderDetails()
-
-  if (!details?.orderId) {
-    setError(
-      "Order could not be identified."
-    )
-    return
-  }
-
-  /* ==================== 21. RESET OLD STATE ==================== */
-  setError("")
-  setTransactionFile(file)
-  setTransactionUploaded(false)
-
-  if (transactionPreview) {
-    URL.revokeObjectURL(
-      transactionPreview
-    )
-  }
-
-  const previewUrl =
-    URL.createObjectURL(file)
-
-  setTransactionPreview(
-    previewUrl
-  )
-
-  /* ==================== 22. UPLOAD ==================== */
-  setUploadingTransaction(true)
-
-  try {
-    const formData =
-      new FormData()
-
-    formData.append(
-      "file",
-      file
-    )
-
-    formData.append(
-      "orderId",
-      details.orderId
-    )
-
-    if (details.email) {
-      formData.append(
-        "email",
-        details.email
-      )
-    }
-
-    const response =
-      await fetch(
-        "/api/transaction-upload",
-        {
-          method: "POST",
-          body: formData,
-          cache: "no-store",
-        }
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError(
+        "Only JPG, PNG, and WEBP images are allowed."
       )
 
-    let data: any = null
-
-    try {
-      data =
-        await response.json()
-    } catch {
-      data = null
+      event.target.value = ""
+      return
     }
 
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-          "Unable to upload screenshot."
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError(
+        "Image must be smaller than 5 MB."
       )
+
+      event.target.value = ""
+      return
     }
 
-    /* ==================== 23. CONFIRM UPLOAD ==================== */
     if (
-      !data?.success ||
-      !data?.image
+      transactionPreview &&
+      transactionPreview.startsWith("blob:")
     ) {
-      throw new Error(
-        "The screenshot could not be saved."
+      URL.revokeObjectURL(
+        transactionPreview
       )
     }
 
-    setTransactionUploaded(
-      true
-    )
+    const preview =
+      URL.createObjectURL(file)
 
-    /* ==================== 24. SAVE SERVER ORDER ==================== */
-    if (data?.order) {
-      setOrder(
-        (previous) => ({
-          ...(previous || {}),
-          ...data.order,
-          transaction_image:
-            data.image,
-          transaction_submitted:
-            false,
-        })
-      )
-    } else {
-      setOrder(
-        (previous) =>
-          previous
-            ? {
-                ...previous,
-                transaction_image:
-                  data.image,
-                transaction_submitted:
-                  false,
-              }
-            : previous
-      )
-    }
+    setTransactionFile(file)
+    setTransactionPreview(preview)
+    setTransactionUploaded(false)
 
-    setError("")
-  } catch (err) {
-    console.error(
-      "Transaction upload error:",
-      err
-    )
-
-    setTransactionUploaded(
-      false
-    )
-
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Unable to upload screenshot."
-    )
-  } finally {
-    setUploadingTransaction(
-      false
-    )
-
-    event.target.value = ""
+    /* Upload immediately after selection */
+    await uploadTransactionImage(file)
   }
-}
 
-  /*
-   * CONFIRM PAYMENT SUBMISSION
-   *
-   * This is the button that sends the
-   * completed submission to the server.
-   */
-  async function completePaymentSubmission() {
-    const details =
-      getOrderDetails()
+  /* ==================== UPLOAD SCREENSHOT ==================== */
 
-    if (!details?.orderId) {
-      setError(
-        "Order could not be identified."
+  async function uploadTransactionImage(
+    file: File
+  ) {
+    if (!order?.id) {
+      setUploadError(
+        "Order information is not available."
       )
       return
     }
 
-    /*
-     * Do not allow CONFIRM until the
-     * screenshot has actually uploaded.
-     */
-    if (
-      !transactionUploaded
-    ) {
-      setError(
+    setUploading(true)
+    setUploadError("")
+    setSubmissionMessage("")
+
+    try {
+      const formData =
+        new FormData()
+
+      formData.append(
+        "file",
+        file
+      )
+
+      formData.append(
+        "orderId",
+        String(order.id)
+      )
+
+      if (order.email || details.email) {
+        formData.append(
+          "email",
+          order.email ||
+            details.email
+        )
+      }
+
+      const response = await fetch(
+        "/api/transaction-upload",
+        {
+          method: "POST",
+          body: formData,
+        }
+      )
+
+      const text =
+        await response.text()
+
+      let data: any = {}
+
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Server returned an invalid upload response."
+        )
+      }
+
+      if (
+        !response.ok ||
+        !data?.success
+      ) {
+        throw new Error(
+          data?.error ||
+            "Upload failed."
+        )
+      }
+
+      setTransactionUploaded(true)
+
+      setOrder((previous) =>
+        previous
+          ? {
+              ...previous,
+              transaction_image:
+                data.transaction_image ||
+                data.image ||
+                previous.transaction_image,
+              transaction_submitted:
+                false,
+            }
+          : previous
+      )
+
+      setSubmissionMessage(
+        "Screenshot uploaded and confirmed. Tap CONFIRM PAYMENT to send it to admin."
+      )
+    } catch (err) {
+      console.error(
+        "Transaction upload error:",
+        err
+      )
+
+      setTransactionUploaded(false)
+
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Upload failed."
+      )
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /* ==================== CONFIRM PAYMENT ==================== */
+
+  async function completePaymentSubmission() {
+    if (submitting) {
+      return
+    }
+
+    if (!order?.id) {
+      setUploadError(
+        "Order information is not available."
+      )
+      return
+    }
+
+    if (!transactionUploaded) {
+      setUploadError(
         "Upload your transaction screenshot first."
       )
       return
     }
 
-    if (
-      uploadingTransaction ||
-      submittingTransaction
-    ) {
-      return
-    }
-
-    setSubmittingTransaction(
-      true
-    )
-    setError("")
+    setSubmitting(true)
+    setUploadError("")
+    setSubmissionMessage("")
 
     try {
-      /*
-       * Tell the server that the
-       * transaction has been submitted.
-       */
-      const response =
-        await fetch(
-          "/api/payment-submission",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              orderId:
-                details.orderId,
-              email:
-                details.email ||
-                undefined,
-              transaction_submitted:
-                true,
-              transaction_image:
-                order?.transaction_image ||
-                null,
-            }),
-          }
-        )
-
-      let data: any = null
-
-      try {
-        data =
-          await response.json()
-      } catch {
-        data = null
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Unable to submit payment."
-        )
-      }
-
-      /*
-       * Update buyer screen immediately.
-       */
-      setOrder((previous) =>
-        previous
-          ? {
-              ...previous,
-              transaction_submitted:
-                true,
-              transaction_submitted_at:
-                new Date().toISOString(),
-              payment_status:
-                "pending",
-            }
-          : previous
-      )
-
-      setPaymentStatus(
-        "pending"
-      )
-
-      /*
-       * Close submission panel.
-       */
-      setPaymentPanelVisible(
-        false
-      )
-
-      setTransactionFile(
-        null
-      )
-
-      if (transactionPreview) {
-        URL.revokeObjectURL(
-          transactionPreview
-        )
-      }
-
-      setTransactionPreview(
-        ""
-      )
-
-      setTransactionUploaded(
-/* ==================== 25. CONFIRM PAYMENT SUBMISSION ==================== */
-async function completePaymentSubmission() {
-  const details =
-    getOrderDetails()
-
-  /* ==================== 26. CHECK ORDER ==================== */
-  if (!details?.orderId) {
-    setError(
-      "Order could not be identified."
-    )
-    return
-  }
-
-  /* ==================== 27. CHECK UPLOAD ==================== */
-  if (!transactionUploaded) {
-    setError(
-      "Upload your transaction screenshot first."
-    )
-    return
-  }
-
-  /* ==================== 28. PREVENT DOUBLE CLICK ==================== */
-  if (
-    uploadingTransaction ||
-    submittingTransaction
-  ) {
-    return
-  }
-
-  setSubmittingTransaction(
-    true
-  )
-
-  setError("")
-
-  try {
-    /* ==================== 29. SEND CONFIRMATION ==================== */
-    const response =
-      await fetch(
+      const response = await fetch(
         "/api/payment-submission",
         {
           method: "POST",
@@ -1146,881 +600,538 @@ async function completePaymentSubmission() {
             "Content-Type":
               "application/json",
           },
-          cache: "no-store",
           body: JSON.stringify({
-            orderId:
-              details.orderId,
+            orderId: String(order.id),
             email:
+              order.email ||
               details.email ||
-              undefined,
+              "",
           }),
         }
       )
 
-    let data: any = null
+      const text =
+        await response.text()
 
-    try {
-      data =
-        await response.json()
-    } catch {
-      data = null
-    }
+      let data: any = {}
 
-    /* ==================== 30. CHECK SERVER RESPONSE ==================== */
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-          "Unable to submit payment."
-      )
-    }
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(
+          "Server returned an invalid response."
+        )
+      }
 
-    if (
-      !data?.success ||
-      !data?.submitted
-    ) {
-      throw new Error(
-        "Payment submission was not completed."
-      )
-    }
+      if (
+        !response.ok ||
+        !data?.success
+      ) {
+        throw new Error(
+          data?.error ||
+            "Unable to submit payment."
+        )
+      }
 
-    /* ==================== 31. UPDATE BUYER SCREEN ==================== */
-    if (data?.order) {
-      setOrder(
-        (previous) => ({
-          ...(previous || {}),
-          ...data.order,
-          transaction_submitted:
-            true,
-        })
-      )
-    } else {
-      setOrder(
-        (previous) =>
-          previous
-            ? {
-                ...previous,
-                transaction_submitted:
-                  true,
-                transaction_submitted_at:
-                  new Date().toISOString(),
-              }
-            : previous
-      )
-    }
-
-    setPaymentStatus(
-      "pending"
-    )
-
-    /* ==================== 32. CLOSE SUBMISSION PANEL ==================== */
-    setPaymentPanelVisible(
-      false
-    )
-
-    setTransactionFile(
-      null
-    )
-
-    if (transactionPreview) {
-      URL.revokeObjectURL(
-        transactionPreview
-      )
-    }
-
-    setTransactionPreview(
-      ""
-    )
-
-    setTransactionUploaded(
-      false
-    )
-
-    setStatusVisible(
-      false
-    )
-
-    setError("")
-
-    /* ==================== 33. REFRESH ORDER ==================== */
-    await loadOrder()
-  } catch (err) {
-    console.error(
-      "Payment submission error:",
-      err
-    )
-
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Unable to submit payment."
-    )
-  } finally {
-    setSubmittingTransaction(
-      false
-    )
-  }
-}
-  /*
-   * DOWNLOAD INVOICE
-   */
-  function downloadInvoice() {
-    if (!order) {
-      return
-    }
-
-    if (
-      paymentStatus !==
-        "confirmed" &&
-      paymentStatus !==
-        "failed"
-    ) {
-      return
-    }
-
-    const status =
-      paymentStatus ===
-      "confirmed"
-        ? "Payment Confirmed"
-        : "Payment Failed"
-
-    const statusColor =
-      paymentStatus ===
-      "confirmed"
-        ? "#16854b"
-        : "#d62828"
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KAKOBUY Invoice</title>
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #f5f5f5;
-  padding: 30px;
-  color: #111;
-}
-.invoice {
-  max-width: 600px;
-  margin: auto;
-  background: white;
-  padding: 30px;
-  border-radius: 16px;
-}
-.logo {
-  color: #e50914;
-  font-size: 28px;
-  font-weight: 900;
-}
-.title {
-  font-size: 22px;
-  font-weight: 800;
-  margin: 20px 0;
-}
-.row {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid #eee;
-  padding: 12px 0;
-}
-.status {
-  font-weight: 800;
-  color: ${statusColor};
-}
-.total {
-  font-size: 20px;
-  font-weight: 900;
-}
-.footer {
-  margin-top: 25px;
-  color: #777;
-  font-size: 12px;
-}
-</style>
-</head>
-<body>
-<div class="invoice">
-  <div class="logo">KAKOBUY</div>
-
-  <div class="title">
-    PAYMENT INVOICE
-  </div>
-
-  <div class="row">
-    <span>Order ID</span>
-    <strong>#${safeText(
-      order.id
-    )}</strong>
-  </div>
-
-  <div class="row">
-    <span>Name</span>
-    <strong>${safeText(
-      order.full_name
-    )}</strong>
-  </div>
-
-  <div class="row">
-    <span>Email</span>
-    <strong>${safeText(
-      order.email
-    )}</strong>
-  </div>
-
-  <div class="row">
-    <span>Payment Method</span>
-    <strong>${safeText(
-      order.payment_method ||
-        method?.name
-    )}</strong>
-  </div>
-
-  <div class="row">
-    <span>Total</span>
-    <strong class="total">
-      ${formatMoney(
-        order.total
-      )}
-    </strong>
-  </div>
-
-  <div class="row">
-    <span>Status</span>
-    <strong class="status">
-      ${status}
-    </strong>
-  </div>
-
-  <div class="row">
-    <span>Created</span>
-    <strong>${safeText(
-      order.created_at
-    )}</strong>
-  </div>
-
-  <div class="footer">
-    Thank you for using KAKOBUY.
-  </div>
-</div>
-</body>
-</html>
-`
-
-    const blob =
-      new Blob(
-        [html],
-        {
-          type: "text/html",
-        }
+      setOrder((previous) =>
+        previous
+          ? {
+              ...previous,
+              transaction_submitted:
+                true,
+              transaction_submitted_at:
+                data?.order
+                  ?.transaction_submitted_at ||
+                new Date().toISOString(),
+            }
+          : previous
       )
 
-    const url =
-      URL.createObjectURL(blob)
-
-    const link =
-      document.createElement("a")
-
-    link.href = url
-
-    link.download =
-      `kakobuy-invoice-${order.id}.html`
-
-    document.body.appendChild(
-      link
-    )
-
-    link.click()
-
-    document.body.removeChild(
-      link
-    )
-
-    window.setTimeout(() => {
-      URL.revokeObjectURL(
-        url
+      setSubmissionMessage(
+        "Payment submitted successfully. Your screenshot has been sent to the admin for review."
       )
-    }, 1000)
+
+      setPaymentVisible(false)
+
+      setTransactionFile(null)
+
+      if (
+        transactionPreview &&
+        transactionPreview.startsWith("blob:")
+      ) {
+        URL.revokeObjectURL(
+          transactionPreview
+        )
+      }
+
+      setTransactionPreview("")
+      setTransactionUploaded(false)
+
+      await loadOrder()
+    } catch (err) {
+      console.error(
+        "Payment submission error:",
+        err
+      )
+
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Unable to submit payment."
+      )
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  /*
-   * STATUS TEXT
-   */
-  function statusTitle() {
-    if (
-      paymentStatus ===
-      "confirmed"
-    ) {
-      return "Payment Confirmed"
-    }
+  /* ==================== PAYMENT METHOD DISPLAY ==================== */
 
-    if (
-      paymentStatus ===
-      "failed"
-    ) {
-      return "Payment Failed"
-    }
+  const methodId =
+    details.method ||
+    order?.payment_method ||
+    "bitcoin"
 
-    return "Payment Pending"
-  }
+  const currentMethod =
+    methods.find(
+      (item) =>
+        item.id ===
+        String(methodId).toLowerCase()
+    ) || methods[0]
 
-  function statusDescription() {
-    if (
-      paymentStatus ===
-      "confirmed"
-    ) {
-      return "Your payment has been confirmed successfully."
-    }
-
-    if (
-      paymentStatus ===
-      "failed"
-    ) {
-      return "Your payment could not be confirmed."
-    }
-
-    return "Your payment is still being checked."
-  }
-
-  const wallet =
-    method?.wallet_address ||
-    method?.address ||
+  const walletAddress =
+    paymentMethod?.wallet_address ||
+    paymentMethod?.address ||
     ""
 
-  const selectedName =
-    PAYMENT_METHODS.find(
-      (item) =>
-        item.id === selected
-    )?.name || selected
+  const qrImage =
+    paymentMethod?.qr_image ||
+    paymentMethod?.qr_image_url ||
+    ""
 
-  const heroTitle =
-    method?.hero_title ||
-    `Pay with ${selectedName}`
+  /* ==================== CLEANUP ==================== */
 
-  const heroSubtitle =
-    method?.hero_subtitle ||
-    "Secure and simple crypto payment"
+  useEffect(() => {
+    return () => {
+      if (
+        transactionPreview &&
+        transactionPreview.startsWith("blob:")
+      ) {
+        URL.revokeObjectURL(
+          transactionPreview
+        )
+      }
+    }
+  }, [transactionPreview])
 
-  const footerText =
-    method?.footer_text ||
-    "KAKOBUY secure crypto payment"
+  /* ==================== LOADING ==================== */
 
-  const isLoading =
-    loadingMethod ||
-    loadingOrder
-
-  const invoiceAvailable =
-    paymentStatus ===
-      "confirmed" ||
-    paymentStatus ===
-      "failed"
-
-  return (
-    <main className="page">
-      <div className="backgroundGlow glowOne" />
-      <div className="backgroundGlow glowTwo" />
-
-      <header className="header">
-        <a
-          href={HOME_URL}
-          className="logo"
-        >
-          <span className="logoMark">
-            K
-          </span>
-
-          <span className="logoText">
-            KAKOBUY
-          </span>
-        </a>
-
-        <a
-          href={CHECK_ORDER_URL}
-          className="backButton"
-        >
-          ← BACK
-        </a>
-      </header>
-
-      <section className="container">
-        <div className="hero">
-          <div className="eyebrow animatedText">
-            SECURE PAYMENT
+  if (loading) {
+    return (
+      <main className="payment-page">
+        <div className="payment-container">
+          <div className="loading-card">
+            <h2>LOADING ORDER...</h2>
+            <p>
+              Please wait while we load
+              your order.
+            </p>
           </div>
-
-          <h1 className="heroTitle">
-            {heroTitle}
-          </h1>
-
-          <p className="heroSubtitle">
-            {heroSubtitle}
-          </p>
         </div>
+      </main>
+    )
+  }
 
-        {error && (
-          <div className="errorBox">
-            {error}
-          </div>
-        )}
+  /* ==================== ERROR ==================== */
 
-        {order && (
-          <div className="orderCard">
-            <div>
-              <span className="smallLabel">
-                ORDER
-              </span>
-
-              <strong>
-                #{order.id}
-              </strong>
-            </div>
-
-            <div className="orderTotal">
-              <span className="smallLabel">
-                AMOUNT TO PAY
-              </span>
-
-              <strong>
-                {formatMoney(
-                  order.total
-                )}
-              </strong>
-            </div>
-          </div>
-        )}
-
-        <div className="paymentCard">
-          <div className="cardHeader">
-            <div>
-              <span className="smallLabel">
-                PAYMENT METHOD
-              </span>
-
-              <h2>
-                Choose payment
-              </h2>
-            </div>
-
-            <div className="timer">
-              <span>
-                TIME
-              </span>
-
-              {/* ==================== 5. TIMER DISPLAY ==================== */}
-              <strong
-                className={
-                  timerStarted &&
-                  timeLeft <= 10
-                    ? "timerDanger"
-                    : ""
-                }
-              >
-                {timerStarted
-                  ? `${Math.floor(
-                      timeLeft / 60
-                    )}:${String(
-                      timeLeft % 60
-                    ).padStart(
-                      2,
-                      "0"
-                    )}`
-                  : "5:00"}
-              </strong>
-            </div>
-          </div>
-
-          <div className="methodGrid">
-            {PAYMENT_METHODS.map(
-              (item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`methodButton ${
-                    selected ===
-                    item.id
-                      ? "active"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    setSelected(
-                      item.id
-                    )
-                  }
-                >
-                  <span className="methodSymbol">
-                    {item.symbol}
-                  </span>
-
-                  <span>
-                    {item.name}
-                  </span>
-                </button>
-              )
-            )}
-          </div>
-
-          {isLoading ? (
-            <div className="loading">
-              <div className="spinner" />
-
-              <p>
-                Loading payment
-                details...
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="paymentInfo">
-                <div className="paymentTitle">
-                  <div>
-                    <span className="smallLabel">
-                      SEND PAYMENT
-                    </span>
-
-                    <h3>
-                      {method?.name ||
-                        selectedName}
-                    </h3>
-                  </div>
-
-                  <span className="coinBadge">
-                    {method?.symbol ||
-                      PAYMENT_METHODS.find(
-                        (item) =>
-                          item.id ===
-                          selected
-                      )?.symbol}
-                  </span>
-                </div>
-
-                {method?.qr_image && (
-                  <div className="qrBox">
-                    <img
-                      src={
-                        method.qr_image
-                      }
-                      alt="Payment QR"
-                    />
-                  </div>
-                )}
-
-                <div className="walletBox">
-                  <span className="smallLabel">
-                    WALLET ADDRESS
-                  </span>
-
-                  <div className="walletRow">
-                    <div className="walletAddress">
-                      {wallet ||
-                        "Wallet address not available"}
-                    </div>
-
-                    <button
-                      type="button"
-                      className={`copyButton ${
-                        copied
-                          ? "copied"
-                          : ""
-                      }`}
-                      onClick={
-                        copyInfo
-                      }
-                      disabled={
-                        !wallet
-                      }
-                    >
-                      {copied
-                        ? "COPIED"
-                        : "COPY"}
-                    </button>
-                  </div>
-                </div>
-
-                {method?.information ||
-                method?.description ? (
-                  <div className="information">
-                    {method.information ||
-                      method.description}
-                  </div>
-                ) : null}
-
-                <div className="warning">
-                  <span className="warningIcon">
-                    !
-                  </span>
-
-                  <p>
-                    Make sure you send
-                    the correct payment
-                    to the wallet address
-                    shown above.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className={`statusSection ${paymentStatus}`}
-              >
-                <div
-                  className={`statusDot ${paymentStatus}`}
-                />
-
-                <div>
-                  <strong>
-                    {statusTitle()}
-                  </strong>
-
-                  <span>
-                    Status updates
-                    automatically.
-                  </span>
-                </div>
-
-                <span className="statusBadge">
-                  {paymentStatus.toUpperCase()}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="actions">
-          <button
-            type="button"
-            className="checkStatusButton"
-            onClick={
-              checkPaymentStatus
-            }
-            disabled={
-              checkingStatus ||
-              !orderDetails?.orderId
-            }
-          >
-            {checkingStatus
-              ? "CHECKING..."
-              : "CHECK PAYMENT STATUS"}
-          </button>
-
-          {invoiceAvailable && (
-            <button
-              type="button"
-              className="invoiceButton"
-              onClick={
-                downloadInvoice
-              }
-            >
-              DOWNLOAD INVOICE
-            </button>
-          )}
-        </div>
-
-        <p className="footer">
-          {footerText}
-        </p>
-      </section>
-
-      {/* PAYMENT SUBMISSION FLOATING PANEL */}
-      {paymentPanelVisible && (
-        <div className="paymentFloat">
-          {/* X — TOP RIGHT */}
-          <button
-            type="button"
-            className="floatCancel"
-            onClick={() =>
-              setPaymentPanelVisible(
-                false
-              )
-            }
-            aria-label="Cancel payment submission"
-          >
-            ✕
-          </button>
-
-          <div className="floatTitle">
-            PAYMENT SUBMISSION
-          </div>
-
-          <p className="floatText">
-            Upload your transaction
-            screenshot and confirm
-            your payment submission.
-          </p>
-
-          {transactionPreview && (
-            <img
-              src={
-                transactionPreview
-              }
-              alt="Transaction screenshot"
-              className="transactionPreview"
-            />
-          )}
-
-          <input
-            id="transaction-image"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            onChange={
-              selectTransactionImage
-            }
-            disabled={
-              uploadingTransaction ||
-              submittingTransaction
-            }
-          />
-
-          {/* UPLOAD IMAGE */}
-          <label
-            htmlFor="transaction-image"
-            className={`uploadImageButton ${
-              uploadingTransaction
-                ? "uploading"
-                : transactionUploaded
-                ? "uploaded"
-                : ""
-            }`}
-          >
-            {uploadingTransaction
-              ? "UPLOADING..."
-              : transactionUploaded
-              ? "IMAGE UPLOADED ✓"
-              : transactionFile
-              ? "CHANGE IMAGE"
-              : "UPLOAD IMAGE"}
-          </label>
-
-          {/* CONFIRM */}
-          <button
-            type="button"
-            className="completedButton"
-            onClick={
-              completePaymentSubmission
-            }
-            disabled={
-              !transactionUploaded ||
-              uploadingTransaction ||
-              submittingTransaction
-            }
-          >
-            {submittingTransaction
-              ? "SUBMITTING..."
-              : transactionUploaded
-              ? "CONFIRM"
-              : "UPLOAD IMAGE FIRST"}
-          </button>
-        </div>
-      )}
-
-      {/* PAYMENT STATUS POPUP */}
-      {statusVisible && (
-        <div
-          className="overlay"
-          onClick={() =>
-            setStatusVisible(
-              false
-            )
-          }
-        >
-          <div
-            className={`statusModal ${paymentStatus}`}
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-            <div className="floatingIcon">
-              {paymentStatus ===
-              "confirmed"
-                ? "👍"
-                : paymentStatus ===
-                  "failed"
-                ? "🚫"
-                : "⏳"}
-            </div>
-
-            <span className="smallLabel">
-              PAYMENT STATUS
-            </span>
-
+  if (error || !order) {
+    return (
+      <main className="payment-page">
+        <div className="payment-container">
+          <div className="error-card">
             <h2>
-              {statusTitle()}
+              WE COULDN'T LOAD THIS ORDER
             </h2>
 
             <p>
-              {statusDescription()}
+              {error ||
+                "The order could not be found."}
             </p>
 
-            <div className="modalStatus">
-              <span
-                className={`modalDot ${paymentStatus}`}
-              />
-
-              <span>
-                {paymentStatus ===
-                "pending"
-                  ? "Waiting for confirmation"
-                  : paymentStatus ===
-                    "confirmed"
-                  ? "Payment successfully confirmed"
-                  : "Payment marked as failed"}
-              </span>
-            </div>
-
-            <div className="modalActions">
-              {invoiceAvailable && (
-                <button
-                  type="button"
-                  className="modalInvoice"
-                  onClick={
-                    downloadInvoice
-                  }
-                >
-                  DOWNLOAD INVOICE
-                </button>
-              )}
-
-              <button
-                type="button"
-                className="closeButton"
-                onClick={() =>
-                  setStatusVisible(
-                    false
-                  )
-                }
-              >
-                CONTINUE
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() =>
+                window.location.reload()
+              }
+            >
+              TRY AGAIN
+            </button>
           </div>
         </div>
-      )}
+      </main>
+    )
+  }
+
+  return (
+    <main className="payment-page">
+      <div className="payment-container">
+
+        {/* ==================== HEADER ==================== */}
+
+        <header className="payment-header">
+          <div>
+            <h1>
+              {paymentMethod?.hero_heading ||
+                paymentMethod?.hero_title ||
+                "PAY WITH CRYPTO"}
+            </h1>
+
+            <p>
+              {paymentMethod?.hero_subtitle ||
+                "Secure and simple crypto payment"}
+            </p>
+          </div>
+
+          <div className="method-badge">
+            {currentMethod.symbol}{" "}
+            {currentMethod.name}
+          </div>
+        </header>
+
+        {/* ==================== ORDER SUMMARY ==================== */}
+
+        <section className="order-card">
+          <div className="order-card-header">
+            <div>
+              <span>ORDER ID</span>
+
+              <strong>
+                #{String(order.id)}
+              </strong>
+            </div>
+
+            <div className="order-total">
+              <span>
+                TOTAL PAYMENT
+              </span>
+
+              <strong>
+                {orderTotal.toFixed(2)}
+              </strong>
+            </div>
+          </div>
+
+          <div className="buyer-name">
+            {order.full_name ||
+              "Customer"}
+          </div>
+
+          {/* ==================== ITEMS ==================== */}
+
+          <div className="items-section">
+            <p className="section-label">
+              ITEMS YOU ARE BUYING
+            </p>
+
+            {items.length === 0 ? (
+              <div className="no-items">
+                No item details available.
+              </div>
+            ) : (
+              <div className="items-list">
+                {items.map(
+                  (item, index) => {
+                    const quantity =
+                      Number(
+                        item.quantity || 1
+                      )
+
+                    const unitPrice =
+                      Number(
+                        item.unitPrice || 0
+                      )
+
+                    return (
+                      <div
+                        className="item-row"
+                        key={`${item.productId || "item"}-${index}`}
+                      >
+                        <div className="item-main">
+                          <strong>
+                            {item.productName ||
+                              item.name ||
+                              "Product"}
+                          </strong>
+
+                          <div className="item-options">
+                            {item.size && (
+                              <span>
+                                Size:{" "}
+                                {item.size}
+                              </span>
+                            )}
+
+                            {item.style && (
+                              <span>
+                                Style:{" "}
+                                {item.style}
+                              </span>
+                            )}
+
+                            {item.color && (
+                              <span>
+                                Color:{" "}
+                                {item.color}
+                              </span>
+                            )}
+
+                            <span>
+                              Qty:{" "}
+                              {quantity}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="item-price">
+                          {(
+                            unitPrice *
+                            quantity
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                    )
+                  }
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ==================== PAYMENT INFORMATION ==================== */}
+
+        {paymentMethodLoading ? (
+          <section className="payment-card">
+            <p>
+              Loading payment details...
+            </p>
+          </section>
+        ) : (
+          <section className="payment-card">
+            <div className="payment-card-title">
+              <span>
+                {currentMethod.symbol}
+              </span>
+
+              <div>
+                <h2>
+                  {currentMethod.name}
+                </h2>
+
+                <p>
+                  {paymentMethod?.information ||
+                    "Send the exact amount to the wallet below."}
+                </p>
+              </div>
+            </div>
+
+            {qrImage && (
+              <div className="qr-wrapper">
+                <img
+                  src={qrImage}
+                  alt={`${currentMethod.name} QR code`}
+                />
+              </div>
+            )}
+
+            <div className="wallet-box">
+              <span>
+                WALLET ADDRESS
+              </span>
+
+              <div className="wallet-row">
+                <code>
+                  {walletAddress ||
+                    "Wallet address unavailable"}
+                </code>
+
+                <button
+                  type="button"
+                  onClick={copyInfo}
+                  disabled={!walletAddress}
+                >
+                  {copied
+                    ? "COPIED ✓"
+                    : "COPY"}
+                </button>
+              </div>
+            </div>
+
+            <div className="amount-box">
+              <span>
+                SEND EXACTLY
+              </span>
+
+              <strong>
+                {orderTotal.toFixed(2)}
+              </strong>
+            </div>
+
+            {!paymentVisible &&
+              !order.transaction_submitted && (
+                <button
+                  type="button"
+                  className="pay-button"
+                  onClick={copyInfo}
+                  disabled={!walletAddress}
+                >
+                  COPY WALLET & START PAYMENT
+                </button>
+              )}
+          </section>
+        )}
+
+        {/* ==================== TIMER ==================== */}
+
+        {paymentVisible &&
+          !order.transaction_submitted && (
+            <section className="timer-card">
+              <span>
+                PAYMENT WINDOW
+              </span>
+
+              <strong>
+                {timerText}
+              </strong>
+
+              <p>
+                Complete your payment before
+                the timer reaches zero.
+              </p>
+            </section>
+          )}
+
+        {/* ==================== SCREENSHOT ==================== */}
+
+        {!order.transaction_submitted && (
+          <section className="upload-card">
+            <p className="section-label">
+              PAYMENT SCREENSHOT
+            </p>
+
+            <h2>
+              Upload your transaction
+              screenshot
+            </h2>
+
+            <p className="upload-help">
+              After sending your payment,
+              upload the screenshot here.
+            </p>
+
+            {transactionPreview && (
+              <div className="transaction-preview">
+                <img
+                  src={transactionPreview}
+                  alt="Transaction preview"
+                />
+              </div>
+            )}
+
+            <label className="upload-button">
+              {uploading
+                ? "UPLOADING..."
+                : transactionUploaded
+                ? "CONFIRMED ✓"
+                : "UPLOAD IMAGE"}
+
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={
+                  selectTransactionImage
+                }
+                disabled={
+                  uploading ||
+                  submitting
+                }
+              />
+            </label>
+
+            {uploadError && (
+              <div className="upload-error">
+                {uploadError}
+              </div>
+            )}
+
+            {submissionMessage && (
+              <div className="upload-success">
+                {submissionMessage}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="confirm-button"
+              onClick={
+                completePaymentSubmission
+              }
+              disabled={
+                submitting ||
+                uploading ||
+                !transactionUploaded
+              }
+            >
+              {submitting
+                ? "SENDING TO ADMIN..."
+                : transactionUploaded
+                ? "CONFIRM PAYMENT"
+                : "UPLOAD IMAGE FIRST"}
+            </button>
+          </section>
+        )}
+
+        {/* ==================== SUBMITTED ==================== */}
+
+        {order.transaction_submitted && (
+          <section className="submitted-card">
+            <div className="submitted-icon">
+              ✓
+            </div>
+
+            <h2>
+              PAYMENT SUBMITTED
+            </h2>
+
+            <p>
+              Your transaction screenshot
+              has been sent to the Kakobuy
+              admin for review.
+            </p>
+
+            <div className="submitted-order">
+              Order #
+              {String(order.id)}
+            </div>
+          </section>
+        )}
+
+        {/* ==================== FOOTER ==================== */}
+
+        <footer>
+          {paymentMethod?.footer_text ||
+            "KAKOBUY"}
+        </footer>
+      </div>
 
       <style jsx>{`
         * {
           box-sizing: border-box;
         }
 
-        .page {
+        .payment-page {
           min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at top left,
-              rgba(229, 9, 20, 0.16),
-              transparent 35%
-            ),
-            radial-gradient(
-              circle at bottom right,
-              rgba(180, 0, 0, 0.1),
-              transparent 30%
-            ),
-            #080808;
+          background: #080808;
           color: #fff;
-          padding: 0 18px 55px;
-          position: relative;
-          overflow: hidden;
+          padding: 20px 14px 45px;
           font-family:
             Inter,
             system-ui,
@@ -2030,842 +1141,434 @@ body {
             sans-serif;
         }
 
-        .backgroundGlow {
-          position: fixed;
-          width: 320px;
-          height: 320px;
-          border-radius: 50%;
-          filter: blur(110px);
-          opacity: 0.18;
-          pointer-events: none;
-        }
-
-        .glowOne {
-          background: #e50914;
-          top: -180px;
-          left: -140px;
-        }
-
-        .glowTwo {
-          background: #9b0000;
-          bottom: -190px;
-          right: -130px;
-        }
-
-        .header {
-          max-width: 920px;
-          margin: 0 auto;
-          padding: 22px 0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          position: relative;
-          z-index: 2;
-        }
-
-        .logo {
-          color: #fff;
-          text-decoration: none;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          font-weight: 900;
-          letter-spacing: 0.08em;
-        }
-
-        .logoMark {
-          width: 37px;
-          height: 37px;
-          display: grid;
-          place-items: center;
-          border-radius: 10px;
-          background: #e50914;
-          color: #fff;
-          font-weight: 900;
-          box-shadow:
-            0 0 25px rgba(
-              229,
-              9,
-              20,
-              0.35
-            );
-        }
-
-        .logoText {
-          font-size: 15px;
-        }
-
-        .backButton {
-          color: #fff;
-          text-decoration: none;
-          font-size: 12px;
-          font-weight: 800;
-          padding: 10px 15px;
-          border: 1px solid #4a1c1f;
-          border-radius: 9px;
-          background: #16090a;
-          transition: 0.2s ease;
-        }
-
-        .backButton:hover {
-          background: #e50914;
-          border-color: #e50914;
-        }
-
-        .container {
+        .payment-container {
           width: 100%;
           max-width: 680px;
           margin: 0 auto;
-          position: relative;
-          z-index: 1;
         }
 
-        .hero {
-          text-align: center;
-          padding: 55px 0 30px;
-        }
-
-        .eyebrow,
-        .smallLabel {
-          font-size: 10px;
-          font-weight: 900;
-          letter-spacing: 0.16em;
-          color: #999;
-        }
-
-        .animatedText {
-          color: #ff3b46;
-          animation:
-            textPulse 1.8s
-            ease-in-out infinite;
-        }
-
-        @keyframes textPulse {
-          0%,
-          100% {
-            opacity: 0.55;
-            transform: translateY(0);
-          }
-
-          50% {
-            opacity: 1;
-            transform: translateY(-3px);
-          }
-        }
-
-        .heroTitle {
-          font-size: clamp(
-            34px,
-            8vw,
-            58px
-          );
-          line-height: 1;
-          letter-spacing: -0.055em;
-          margin: 12px 0;
-        }
-
-        .heroSubtitle {
-          color: #aaa;
-          max-width: 480px;
-          margin: 0 auto;
-          line-height: 1.6;
-          font-size: 14px;
-        }
-
-        .errorBox {
-          background: #251012;
-          border: 1px solid #6d2228;
-          color: #ffb2b7;
-          padding: 14px;
-          border-radius: 12px;
-          margin-bottom: 14px;
-          font-size: 13px;
-        }
-
-        .orderCard {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 18px;
-          background: #111;
-          border: 1px solid #351719;
-          border-radius: 16px;
-          margin-bottom: 14px;
-        }
-
-        .orderCard strong {
-          display: block;
-          margin-top: 5px;
-          font-size: 14px;
-        }
-
-        .orderTotal {
-          text-align: right;
-        }
-
-        .paymentCard {
-          background: #101010;
-          border: 1px solid #3a191b;
-          border-radius: 22px;
-          padding: 20px;
-          box-shadow:
-            0 25px 80px rgba(
-              0,
-              0,
-              0,
-              0.45
-            ),
-            0 0 45px rgba(
-              229,
-              9,
-              20,
-              0.04
-            );
-        }
-
-        .cardHeader {
+        .payment-header {
           display: flex;
           justify-content: space-between;
           gap: 15px;
           align-items: flex-start;
+          margin-bottom: 15px;
         }
 
-        .cardHeader h2 {
-          margin: 7px 0 0;
-          font-size: 22px;
+        .payment-header h1 {
+          margin: 0;
+          font-size: 25px;
+          line-height: 1.1;
         }
 
-        .timer {
-          text-align: right;
-        }
-
-        .timer strong {
-          display: block;
-          margin-top: 5px;
-          color: #ff3844;
-          font-size: 18px;
-        }
-
-        .timerDanger {
-          animation:
-            timerPulse 0.8s
-            ease-in-out infinite;
-          color: #ff7078 !important;
-        }
-
-        @keyframes timerPulse {
-          0%,
-          100% {
-            opacity: 1;
-          }
-
-          50% {
-            opacity: 0.45;
-          }
-        }
-
-        .methodGrid {
-          display: grid;
-          grid-template-columns: repeat(
-            4,
-            1fr
-          );
-          gap: 8px;
-          margin: 22px 0;
-        }
-
-        .methodButton {
-          min-height: 72px;
-          border-radius: 12px;
-          border: 1px solid #332022;
-          background: #151515;
-          color: #aaa;
-          cursor: pointer;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          gap: 7px;
+        .payment-header p {
+          margin: 6px 0 0;
+          color: #777;
           font-size: 11px;
         }
 
-        .methodButton.active {
-          background: #e50914;
-          border-color: #ff3945;
-          color: #fff;
+        .method-badge {
+          padding: 8px 10px;
+          border: 1px solid #292929;
+          border-radius: 9px;
+          background: #111;
+          color: #aaa;
+          font-size: 10px;
+          font-weight: 800;
+          white-space: nowrap;
         }
 
-        .methodSymbol {
-          font-size: 20px;
-          font-weight: 900;
+        .order-card,
+        .payment-card,
+        .timer-card,
+        .upload-card,
+        .submitted-card,
+        .loading-card,
+        .error-card {
+          background: #101010;
+          border: 1px solid #292929;
+          border-radius: 17px;
+          padding: 18px;
+          margin-bottom: 14px;
         }
 
-        .loading {
-          min-height: 250px;
+        .order-card-header {
           display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          color: #777;
-          gap: 15px;
-        }
-
-        .spinner {
-          width: 34px;
-          height: 34px;
-          border: 3px solid #331619;
-          border-top-color: #e50914;
-          border-radius: 50%;
-          animation:
-            spin 0.8s linear
-            infinite;
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        .paymentInfo {
-          border-top: 1px solid #301619;
-          padding-top: 22px;
-        }
-
-        .paymentTitle {
-          display: flex;
-          align-items: center;
           justify-content: space-between;
           gap: 15px;
         }
 
-        .paymentTitle h3 {
-          margin: 6px 0 0;
-          font-size: 18px;
+        .order-card-header span,
+        .amount-box span,
+        .wallet-box > span,
+        .timer-card > span,
+        .section-label {
+          display: block;
+          color: #666;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: .12em;
         }
 
-        .coinBadge {
+        .order-card-header strong {
+          display: block;
+          margin-top: 5px;
+          font-size: 17px;
+        }
+
+        .order-total {
+          text-align: right;
+        }
+
+        .order-total strong {
+          color: #fff;
+        }
+
+        .buyer-name {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid #242424;
+          color: #aaa;
+          font-size: 12px;
+        }
+
+        .items-section {
+          margin-top: 17px;
+        }
+
+        .section-label {
+          margin: 0 0 9px;
+        }
+
+        .items-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .item-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px;
+          border: 1px solid #242424;
+          border-radius: 11px;
+          background: #151515;
+        }
+
+        .item-main {
+          min-width: 0;
+        }
+
+        .item-main strong {
+          display: block;
+          font-size: 12px;
+          word-break: break-word;
+        }
+
+        .item-options {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px 10px;
+          margin-top: 6px;
+          color: #777;
+          font-size: 9px;
+        }
+
+        .item-price {
+          flex: 0 0 auto;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .no-items {
+          color: #666;
+          font-size: 11px;
+        }
+
+        .payment-card-title {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .payment-card-title > span {
           width: 40px;
           height: 40px;
           display: grid;
           place-items: center;
           border-radius: 50%;
-          background: #e50914;
-          color: #fff;
-          font-weight: 900;
-          font-size: 12px;
+          background: #181818;
+          font-size: 20px;
         }
 
-        .qrBox {
-          display: flex;
-          justify-content: center;
-          margin: 22px 0;
+        .payment-card-title h2,
+        .upload-card h2,
+        .submitted-card h2 {
+          margin: 0;
+          font-size: 17px;
         }
 
-        .qrBox img {
-          width: 190px;
-          height: 190px;
-          object-fit: contain;
+        .payment-card-title p {
+          margin: 4px 0 0;
+          color: #777;
+          font-size: 10px;
+          line-height: 1.5;
+        }
+
+        .qr-wrapper {
+          margin: 17px auto;
+          width: 220px;
+          max-width: 100%;
+          padding: 10px;
           background: #fff;
           border-radius: 12px;
-          padding: 8px;
         }
 
-        .walletBox {
-          margin-top: 20px;
+        .qr-wrapper img {
+          display: block;
+          width: 100%;
+          height: auto;
         }
 
-        .walletRow {
-          margin-top: 8px;
-          display: flex;
-          align-items: stretch;
-          gap: 8px;
-        }
-
-        .walletAddress {
-          flex: 1;
-          min-width: 0;
-          padding: 13px;
-          border-radius: 10px;
+        .wallet-box,
+        .amount-box {
+          margin-top: 12px;
+          padding: 12px;
+          border-radius: 11px;
           background: #080808;
-          border: 1px solid #332022;
-          color: #ddd;
-          font-family: monospace;
-          font-size: 12px;
-          line-height: 1.5;
-          overflow-wrap: anywhere;
+          border: 1px solid #292929;
         }
 
-        .copyButton {
-          border: 0;
-          background: #e50914;
+        .wallet-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .wallet-row code {
+          min-width: 0;
+          flex: 1;
+          color: #bbb;
+          font-size: 10px;
+          word-break: break-all;
+        }
+
+        .wallet-row button {
+          border: 1px solid #444;
+          background: #181818;
           color: #fff;
-          padding: 0 16px;
-          border-radius: 10px;
+          border-radius: 8px;
+          padding: 8px 10px;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .amount-box strong {
+          display: block;
+          margin-top: 5px;
+          font-size: 20px;
+        }
+
+        .pay-button,
+        .confirm-button {
+          width: 100%;
+          min-height: 47px;
+          margin-top: 14px;
+          border: 0;
+          border-radius: 11px;
+          background: #ff3030;
+          color: #fff;
           font-weight: 900;
           cursor: pointer;
         }
 
-        .copyButton:disabled {
-          opacity: 0.4;
+        .pay-button:disabled,
+        .confirm-button:disabled {
+          opacity: .45;
           cursor: not-allowed;
         }
 
-        .copyButton.copied {
-          background: #1c8c55;
+        .timer-card {
+          text-align: center;
+          border-color: rgba(255, 48, 48, .35);
         }
 
-        .information {
-          margin-top: 16px;
-          padding: 14px;
-          border-radius: 10px;
-          background: #161616;
-          border: 1px solid #281719;
-          color: #aaa;
-          font-size: 13px;
-          line-height: 1.6;
-          white-space: pre-wrap;
-        }
-
-        .warning {
-          margin-top: 14px;
-          padding: 13px;
-          display: flex;
-          gap: 10px;
-          border-radius: 10px;
-          background: #181010;
-          border: 1px solid #3c1b1e;
-        }
-
-        .warningIcon {
-          width: 20px;
-          height: 20px;
-          flex: 0 0 20px;
-          display: grid;
-          place-items: center;
-          border-radius: 50%;
-          background: #e50914;
-          color: #fff;
-          font-size: 12px;
-          font-weight: 900;
-        }
-
-        .warning p {
-          margin: 0;
-          color: #aaa;
-          font-size: 12px;
-          line-height: 1.5;
-        }
-
-        .statusSection {
-          margin-top: 18px;
-          padding: 14px;
-          border: 1px solid #352022;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          background: #120b0c;
-        }
-
-        .statusSection.confirmed {
-          border-color: #194b36;
-          background: #0c1712;
-        }
-
-        .statusSection.failed {
-          border-color: #592024;
-          background: #190b0d;
-        }
-
-        .statusDot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #d7a82c;
-        }
-
-        .statusDot.confirmed {
-          background: #2bb673;
-        }
-
-        .statusDot.failed {
-          background: #e44;
-        }
-
-        .statusSection strong {
+        .timer-card strong {
           display: block;
-          font-size: 13px;
+          margin-top: 4px;
+          color: #ff5050;
+          font-size: 31px;
         }
 
-        .statusSection span {
-          display: block;
-          color: #777;
-          font-size: 11px;
+        .timer-card p {
+          margin: 5px 0 0;
+          color: #666;
+          font-size: 10px;
+        }
+
+        .upload-card h2 {
           margin-top: 3px;
         }
 
-        .statusBadge {
-          margin-left: auto;
-          color: #ff5260 !important;
-          font-size: 9px !important;
-          font-weight: 900;
-        }
-
-        .actions {
-          display: grid;
-          gap: 10px;
-          margin-top: 14px;
-        }
-
-        .checkStatusButton,
-        .invoiceButton {
-          min-height: 50px;
-          border-radius: 11px;
-          display: grid;
-          place-items: center;
-          font-size: 13px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .checkStatusButton {
-          border: 1px solid #ff303c;
-          background: #e50914;
-          color: #fff;
-        }
-
-        .checkStatusButton:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-
-        .invoiceButton {
-          border: 1px solid #383838;
-          background: #171717;
-          color: #fff;
-        }
-
-        .footer {
-          text-align: center;
-          color: #555;
-          font-size: 11px;
-          margin: 25px 0 0;
-        }
-
-        /*
-         * FLOATING PAYMENT PANEL
-         */
-        .paymentFloat {
-          position: fixed;
-          right: 18px;
-          bottom: 18px;
-          width: min(
-            340px,
-            calc(100vw - 36px)
-          );
-          padding: 18px;
-          background: #111;
-          border: 1px solid #e50914;
-          border-radius: 18px;
-          box-shadow:
-            0 20px 70px rgba(
-              0,
-              0,
-              0,
-              0.7
-            ),
-            0 0 35px rgba(
-              229,
-              9,
-              20,
-              0.2
-            );
-          z-index: 40;
-        }
-
-        /*
-         * X IS NOW TOP-RIGHT
-         */
-        .floatCancel {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 28px;
-          height: 28px;
-          border: 0;
-          border-radius: 50%;
-          background: #222;
-          color: #fff;
-          cursor: pointer;
-        }
-
-        .floatCancel:hover {
-          background: #e50914;
-        }
-
-        .floatTitle {
-          text-align: center;
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 0.12em;
-          color: #ff3b46;
-          margin-bottom: 8px;
-        }
-
-        .floatText {
-          margin: 0 0 12px;
-          text-align: center;
-          color: #888;
-          font-size: 11px;
+        .upload-help {
+          color: #777;
+          font-size: 10px;
           line-height: 1.5;
         }
 
-        .transactionPreview {
-          display: block;
-          width: 100%;
-          max-height: 180px;
-          object-fit: contain;
-          border-radius: 10px;
+        .transaction-preview {
+          margin: 12px 0;
+          padding: 8px;
+          border-radius: 11px;
           background: #080808;
-          margin-bottom: 10px;
           border: 1px solid #292929;
         }
 
-        .uploadImageButton,
-        .completedButton {
+        .transaction-preview img {
+          display: block;
           width: 100%;
-          min-height: 44px;
-          border-radius: 10px;
+          max-height: 400px;
+          object-fit: contain;
+          border-radius: 7px;
+        }
+
+        .upload-button {
           display: grid;
           place-items: center;
+          min-height: 46px;
+          border: 1px dashed #444;
+          border-radius: 10px;
+          background: #151515;
+          color: #fff;
           font-size: 11px;
           font-weight: 900;
           cursor: pointer;
-          margin-top: 8px;
         }
 
-        .uploadImageButton {
-          background: #1a1a1a;
-          border: 1px solid #444;
-          color: #fff;
+        .upload-button input {
+          display: none;
         }
 
-        .uploadImageButton.uploading {
-          opacity: 0.6;
-          cursor: wait;
+        .upload-error,
+        .upload-success {
+          margin-top: 10px;
+          padding: 10px;
+          border-radius: 9px;
+          font-size: 10px;
+          line-height: 1.5;
         }
 
-        .uploadImageButton.uploaded {
-          background: #143b29;
-          border-color: #2bb673;
-          color: #6ee7a8;
+        .upload-error {
+          background: rgba(255, 48, 48, .08);
+          border: 1px solid rgba(255, 48, 48, .3);
+          color: #ff7777;
         }
 
-        .completedButton {
-          background: #e50914;
-          border: 1px solid #ff3541;
-          color: #fff;
+        .upload-success {
+          background: rgba(32, 182, 107, .08);
+          border: 1px solid rgba(32, 182, 107, .3);
+          color: #58d995;
         }
 
-        .completedButton:hover:not(:disabled) {
-          background: #ff2633;
-          transform: translateY(-1px);
-        }
-
-        .completedButton:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-        }
-
-        /*
-         * STATUS MODAL
-         */
-        .overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(
-            0,
-            0,
-            0,
-            0.86
-          );
-          backdrop-filter: blur(12px);
-          display: grid;
-          place-items: center;
-          padding: 20px;
-          z-index: 50;
-        }
-
-        .statusModal {
-          width: min(
-            100%,
-            390px
-          );
-          background: #111;
-          border: 1px solid #472024;
-          border-radius: 24px;
-          padding: 30px;
+        .submitted-card {
           text-align: center;
         }
 
-        .statusModal.confirmed {
-          border-color: #236c4a;
-        }
-
-        .statusModal.failed {
-          border-color: #7a252d;
-        }
-
-        .floatingIcon {
-          width: 82px;
-          height: 82px;
-          border-radius: 50%;
+        .submitted-icon {
+          width: 52px;
+          height: 52px;
+          margin: 0 auto 10px;
           display: grid;
           place-items: center;
-          margin: 0 auto 20px;
-          background:
-            radial-gradient(
-              circle,
-              #e50914,
-              #780006
-            );
-          font-size: 37px;
-        }
-
-        .statusModal.confirmed
-          .floatingIcon {
-          background:
-            radial-gradient(
-              circle,
-              #2bb673,
-              #105c38
-            );
-        }
-
-        .statusModal.failed
-          .floatingIcon {
-          background:
-            radial-gradient(
-              circle,
-              #e44,
-              #79151b
-            );
-        }
-
-        .statusModal h2 {
-          margin: 10px 0;
+          border-radius: 50%;
+          background: rgba(32, 182, 107, .12);
+          color: #35c87d;
           font-size: 25px;
+          font-weight: 900;
         }
 
-        .statusModal p {
-          color: #888;
+        .submitted-card p {
+          color: #777;
+          font-size: 11px;
           line-height: 1.6;
-          font-size: 13px;
-          margin: 0 0 20px;
         }
 
-        .modalStatus {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 11px;
-          border-radius: 10px;
+        .submitted-order {
+          display: inline-block;
+          margin-top: 6px;
+          padding: 8px 10px;
+          border-radius: 8px;
           background: #181818;
-          border: 1px solid #292929;
           color: #aaa;
+          font-size: 10px;
+        }
+
+        .loading-card,
+        .error-card {
+          text-align: center;
+          margin-top: 30px;
+        }
+
+        .loading-card h2,
+        .error-card h2 {
+          font-size: 15px;
+        }
+
+        .loading-card p,
+        .error-card p {
+          color: #777;
           font-size: 11px;
         }
 
-        .modalDot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #d7a82c;
-        }
-
-        .modalDot.confirmed {
-          background: #2bb673;
-        }
-
-        .modalDot.failed {
-          background: #e44;
-        }
-
-        .modalActions {
-          display: grid;
-          gap: 9px;
-          margin-top: 18px;
-        }
-
-        .modalInvoice,
-        .closeButton {
-          width: 100%;
-          min-height: 46px;
-          border-radius: 10px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .modalInvoice {
-          border: 1px solid #e50914;
-          background: #e50914;
+        .error-card button {
+          min-height: 44px;
+          padding: 0 18px;
+          border: 0;
+          border-radius: 9px;
+          background: #ff3030;
           color: #fff;
+          font-weight: 800;
         }
 
-        .closeButton {
-          border: 1px solid #333;
-          background: #1b1b1b;
-          color: #fff;
+        footer {
+          text-align: center;
+          color: #555;
+          font-size: 10px;
+          padding-top: 8px;
         }
 
         @media (max-width: 520px) {
-          .page {
-            padding-left: 12px;
-            padding-right: 12px;
+          .payment-page {
+            padding: 15px 11px 35px;
           }
 
-          .header {
-            padding-top: 15px;
-          }
-
-          .hero {
-            padding-top: 38px;
-          }
-
-          .paymentCard {
-            padding: 15px;
-            border-radius: 18px;
-          }
-
-          .methodGrid {
-            grid-template-columns:
-              repeat(2, 1fr);
-          }
-
-          .walletRow {
+          .payment-header {
             flex-direction: column;
           }
 
-          .copyButton {
-            min-height: 44px;
+          .method-badge {
+            align-self: flex-start;
           }
 
-          .statusBadge {
-            display: none !important;
+          .order-card-header {
+            flex-direction: column;
           }
 
-          .paymentFloat {
-            right: 12px;
-            bottom: 12px;
-            width: calc(
-              100vw - 24px
-            );
+          .order-total {
+            text-align: left;
           }
 
-          .statusModal {
-            padding: 25px 20px;
+          .wallet-row {
+            align-items: stretch;
+          }
+
+          .wallet-row {
+            flex-direction: column;
+          }
+
+          .wallet-row button {
+            min-height: 40px;
           }
         }
       `}</style>
