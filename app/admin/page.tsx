@@ -1,12 +1,40 @@
 "use client"
 
-import {
-  useEffect,
-  useState,
-  type ChangeEvent,
-} from "react"
+import { useEffect, useState } from "react"
 
-const METHODS = [
+type PaymentMethod = {
+  id: string
+  name: string
+  information: string
+  wallet_address: string
+  qr_image_url: string
+  hero_heading: string
+  hero_subtitle: string
+  footer_text: string
+}
+
+type Order = {
+  id: number | string
+  product_name?: string
+  productName?: string
+  full_name?: string
+  fullName?: string
+  email?: string
+  phone?: string
+  total?: number | string
+  payment_status?: string
+  paymentStatus?: string
+  payment_method?: string
+  paymentMethod?: string
+  transaction_image?: string
+  transactionImage?: string
+  transaction_submitted_at?: string
+  transaction_submittedAt?: string
+  created_at?: string
+  createdAt?: string
+}
+
+const COINS = [
   {
     id: "bitcoin",
     name: "Bitcoin",
@@ -29,240 +57,488 @@ const METHODS = [
   },
 ]
 
-type WaitingOrder = {
-  id: number
-  full_name: string
-  email: string
-  phone?: string
-  total: number | string
-  payment_status: string
-  payment_method?: string
-  transaction_image?: string
-  transaction_submitted?: boolean
-  transaction_submitted_at?: string
-  wallet_copied?: boolean
-  wallet_copied_at?: string
-  created_at?: string
-}
-
-type PaymentMethod = {
-  id: string
-  name: string
-  information: string
-  wallet_address: string
-  qr_image_url: string
-  hero_heading: string
-  hero_subtitle: string
-  footer_text: string
-}
+const emptyMethod = (id: string, name: string): PaymentMethod => ({
+  id,
+  name,
+  information: "",
+  wallet_address: "",
+  qr_image_url: "",
+  hero_heading: "Complete Your Payment",
+  hero_subtitle: "Send the exact amount to the wallet below.",
+  footer_text: "Kakobuy payment service",
+})
 
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
 
-  const [selectedMethod, setSelectedMethod] =
-    useState("bitcoin")
+  const [logoUrl, setLogoUrl] = useState("")
+  const [logoFile, setLogoFile] = useState<File | null>(null)
 
-  const [methods, setMethods] =
-    useState<Record<string, PaymentMethod>>({})
+  const [methods, setMethods] = useState<
+    Record<string, PaymentMethod>
+  >({
+    bitcoin: emptyMethod("bitcoin", "Bitcoin"),
+    ethereum: emptyMethod("ethereum", "Ethereum"),
+    tron: emptyMethod("tron", "TRON"),
+    binance: emptyMethod("binance", "Binance"),
+  })
 
-  const [waitingOrders, setWaitingOrders] =
-    useState<WaitingOrder[]>([])
+  const [selectedCoin, setSelectedCoin] = useState("bitcoin")
 
-  const [loadingOrders, setLoadingOrders] =
-    useState(false)
+  const [orders, setOrders] = useState<Order[]>([])
 
-  const [savingMethod, setSavingMethod] =
-    useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savingLogo, setSavingLogo] = useState(false)
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
 
-  const [message, setMessage] =
-    useState("")
+  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [updatingOrder, setUpdatingOrder] = useState<
+    number | string | null
+  >(null)
 
-  const [qrFile, setQrFile] =
-    useState<File | null>(null)
+  const currentMethod =
+    methods[selectedCoin] ||
+    emptyMethod(
+      selectedCoin,
+      COINS.find((coin) => coin.id === selectedCoin)?.name ||
+        selectedCoin
+    )
 
-  /* =========================
-     GLOBAL LOGO
-  ========================= */
-
-  const [logoPreview, setLogoPreview] =
-    useState("")
-
-  const [logoFile, setLogoFile] =
-    useState<File | null>(null)
-
-  const [loadingLogo, setLoadingLogo] =
-    useState(false)
-
-  const [savingLogo, setSavingLogo] =
-    useState(false)
-
-  const [logoMessage, setLogoMessage] =
-    useState("")
-
-  /* =========================
-     AUTH
-  ========================= */
+  // ------------------------------------------------------------
+  // CHECK ADMIN LOGIN
+  // ------------------------------------------------------------
 
   useEffect(() => {
-    async function checkAdmin() {
-      try {
-        const response =
-          await fetch("/api/admin-check", {
-            cache: "no-store",
-          })
-
-        if (!response.ok) {
-          setAuthorized(false)
-          setCheckingAuth(false)
-          return
-        }
-
-        const data = await response.json()
-
-        if (!data.authenticated) {
-          setAuthorized(false)
-          setCheckingAuth(false)
-          return
-        }
-
-        setAuthorized(true)
-
-        // Load the shared Kakobuy logo
-        await loadLogo()
-
-        setCheckingAuth(false)
-      } catch (error) {
-        console.error(
-          "Authentication check failed:",
-          error
-        )
-
-        setAuthorized(false)
-        setCheckingAuth(false)
-      }
-    }
-
     checkAdmin()
   }, [])
 
-  /* =========================
-     LOAD GLOBAL LOGO
-  ========================= */
-
-  async function loadLogo() {
+  async function checkAdmin() {
     try {
-      setLoadingLogo(true)
+      setCheckingAuth(true)
 
-      const response =
-        await fetch("/api/site-settings", {
-          cache: "no-store",
-        })
+      const response = await fetch("/api/admin-check", {
+        method: "GET",
+        cache: "no-store",
+      })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
-      if (data.success) {
-        setLogoPreview(data.logo_url || "")
+      if (!response.ok || !data.authenticated) {
+        setAuthorized(false)
+        setCheckingAuth(false)
+        return
       }
-    } catch (error) {
-      console.error(
-        "Unable to load logo:",
-        error
-      )
-    } finally {
-      setLoadingLogo(false)
+
+      setAuthorized(true)
+      setCheckingAuth(false)
+
+      await loadEverything()
+    } catch (err) {
+      console.error(err)
+      setAuthorized(false)
+      setCheckingAuth(false)
     }
   }
 
-  /* =========================
-     LOGO FILE CHANGE
-  ========================= */
+  // ------------------------------------------------------------
+  // LOAD EVERYTHING
+  // ------------------------------------------------------------
 
-  function handleLogoChange(
-    event: ChangeEvent<HTMLInputElement>
+  async function loadEverything() {
+    setLoading(true)
+    setError("")
+
+    try {
+      await Promise.all([
+        loadLogo(),
+        loadPaymentMethods(),
+        loadOrders(),
+      ])
+    } catch (err) {
+      console.error(err)
+      setError("Some admin information could not be loaded.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ------------------------------------------------------------
+  // LOAD LOGO
+  // ------------------------------------------------------------
+
+  async function loadLogo() {
+    try {
+      const response = await fetch("/api/site-settings", {
+        cache: "no-store",
+      })
+
+      if (!response.ok) return
+
+      const data = await response.json()
+
+      const logo =
+        data?.logo_url ||
+        data?.logoUrl ||
+        data?.settings?.logo_url ||
+        data?.settings?.logoUrl ||
+        ""
+
+      setLogoUrl(logo)
+    } catch (err) {
+      console.error("Logo load error:", err)
+    }
+  }
+
+  // ------------------------------------------------------------
+  // LOAD PAYMENT METHODS
+  // ------------------------------------------------------------
+
+  async function loadPaymentMethods() {
+    const updated: Record<string, PaymentMethod> = {
+      bitcoin: emptyMethod("bitcoin", "Bitcoin"),
+      ethereum: emptyMethod("ethereum", "Ethereum"),
+      tron: emptyMethod("tron", "TRON"),
+      binance: emptyMethod("binance", "Binance"),
+    }
+
+    for (const coin of COINS) {
+      try {
+        const response = await fetch(
+          `/api/payment-methods?id=${encodeURIComponent(
+            coin.id
+          )}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        )
+
+        if (!response.ok) continue
+
+        const data = await response.json()
+
+        const source =
+          data?.paymentMethod ||
+          data?.method ||
+          data?.data ||
+          data
+
+        if (!source) continue
+
+        updated[coin.id] = {
+          id: source.id || coin.id,
+          name: source.name || coin.name,
+          information:
+            source.information ||
+            source.info ||
+            "",
+          wallet_address:
+            source.wallet_address ||
+            source.walletAddress ||
+            "",
+          qr_image_url:
+            source.qr_image_url ||
+            source.qrImageUrl ||
+            "",
+          hero_heading:
+            source.hero_heading ||
+            source.heroHeading ||
+            "Complete Your Payment",
+          hero_subtitle:
+            source.hero_subtitle ||
+            source.heroSubtitle ||
+            "Send the exact amount to the wallet below.",
+          footer_text:
+            source.footer_text ||
+            source.footerText ||
+            "Kakobuy payment service",
+        }
+      } catch (err) {
+        console.error(
+          `Failed to load ${coin.id}:`,
+          err
+        )
+      }
+    }
+
+    setMethods(updated)
+  }
+
+  // ------------------------------------------------------------
+  // LOAD ORDERS
+  // ------------------------------------------------------------
+
+  async function loadOrders() {
+    try {
+      setLoadingOrders(true)
+
+      const response = await fetch(
+        "/api/payment-status",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      )
+
+      if (!response.ok) {
+        setOrders([])
+        return
+      }
+
+      const data = await response.json()
+
+      const list =
+        data?.orders ||
+        data?.data ||
+        data?.payments ||
+        []
+
+      setOrders(Array.isArray(list) ? list : [])
+    } catch (err) {
+      console.error("Orders load error:", err)
+      setOrders([])
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
+  // Refresh orders automatically
+  useEffect(() => {
+    if (!authorized) return
+
+    const interval = setInterval(() => {
+      loadOrders()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [authorized])
+
+  // ------------------------------------------------------------
+  // CHANGE PAYMENT FIELD
+  // ------------------------------------------------------------
+
+  function updateMethod(
+    field: keyof PaymentMethod,
+    value: string
+  ) {
+    setMethods((previous) => ({
+      ...previous,
+      [selectedCoin]: {
+        ...previous[selectedCoin],
+        [field]: value,
+      },
+    }))
+
+    setMessage("")
+    setError("")
+  }
+
+  // ------------------------------------------------------------
+  // SAVE PAYMENT METHOD
+  // ------------------------------------------------------------
+
+  async function savePaymentMethod() {
+    setSaving(true)
+    setMessage("")
+    setError("")
+
+    try {
+      const method = methods[selectedCoin]
+
+      const response = await fetch(
+        "/api/payment-methods",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            id: selectedCoin,
+            name: method.name,
+            information: method.information,
+            wallet_address: method.wallet_address,
+            qr_image_url: method.qr_image_url,
+            hero_heading: method.hero_heading,
+            hero_subtitle: method.hero_subtitle,
+            footer_text: method.footer_text,
+          }),
+        }
+      )
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Unable to save payment settings."
+        )
+      }
+
+      setMessage(
+        `${method.name} settings saved successfully.`
+      )
+
+      await loadPaymentMethods()
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save changes."
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ------------------------------------------------------------
+  // QR IMAGE
+  // ------------------------------------------------------------
+
+  function handleQrImage(
+    event: React.ChangeEvent<HTMLInputElement>
   ) {
     const file = event.target.files?.[0]
 
     if (!file) return
 
-    const allowedTypes = [
+    const allowed = [
       "image/jpeg",
       "image/png",
       "image/webp",
     ]
 
-    if (!allowedTypes.includes(file.type)) {
-      setLogoMessage(
-        "Logo must be JPG, PNG, or WEBP."
+    if (!allowed.includes(file.type)) {
+      setError(
+        "QR image must be JPG, PNG or WEBP."
       )
+      event.target.value = ""
       return
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setLogoMessage(
-        "Logo must be smaller than 5MB."
+      setError("QR image must be smaller than 5MB.")
+      event.target.value = ""
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      const result = reader.result
+
+      if (typeof result !== "string") return
+
+      updateMethod("qr_image_url", result)
+      setMessage("QR image selected. Click SAVE.")
+    }
+
+    reader.readAsDataURL(file)
+  }
+
+  // ------------------------------------------------------------
+  // REMOVE QR
+  // ------------------------------------------------------------
+
+  function removeQr() {
+    updateMethod("qr_image_url", "")
+    setMessage("QR image removed. Click SAVE.")
+  }
+
+  // ------------------------------------------------------------
+  // LOGO IMAGE
+  // ------------------------------------------------------------
+
+  function handleLogoImage(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    const allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ]
+
+    if (!allowed.includes(file.type)) {
+      setError(
+        "Logo must be JPG, PNG or WEBP."
       )
+      event.target.value = ""
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Logo must be smaller than 5MB.")
+      event.target.value = ""
       return
     }
 
     setLogoFile(file)
-    setLogoMessage("")
 
-    const previewUrl =
-      URL.createObjectURL(file)
+    const reader = new FileReader()
 
-    setLogoPreview(previewUrl)
-  }
-
-  /* =========================
-     SAVE GLOBAL LOGO
-  ========================= */
-
-  async function saveLogo() {
-    if (!logoFile) {
-      setLogoMessage(
-        "Please select a new logo first."
-      )
-      return
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setLogoUrl(reader.result)
+        setMessage("Logo selected. Click SAVE LOGO.")
+      }
     }
 
+    reader.readAsDataURL(file)
+  }
+
+  // ------------------------------------------------------------
+  // SAVE LOGO
+  // ------------------------------------------------------------
+
+  async function saveLogo() {
+    setSavingLogo(true)
+    setMessage("")
+    setError("")
+
     try {
-      setSavingLogo(true)
-      setLogoMessage("")
-
-      const formData = new FormData()
-
-      formData.append("logo", logoFile)
-
-      const response =
-        await fetch("/api/site-settings", {
+      const response = await fetch(
+        "/api/site-settings",
+        {
           method: "PUT",
-          body: formData,
-        })
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            logo_url: logoUrl,
+          }),
+        }
+      )
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
         throw new Error(
-          data.error || "Unable to save logo."
+          data?.error ||
+            data?.message ||
+            "Unable to save logo."
         )
       }
 
-      setLogoPreview(data.logo_url || "")
       setLogoFile(null)
 
-      setLogoMessage(
-        "Kakobuy logo saved successfully."
-      )
-    } catch (error) {
-      console.error(
-        "Save logo error:",
-        error
-      )
+      setMessage("Kakobuy logo saved successfully.")
+    } catch (err) {
+      console.error(err)
 
-      setLogoMessage(
-        error instanceof Error
-          ? error.message
+      setError(
+        err instanceof Error
+          ? err.message
           : "Unable to save logo."
       )
     } finally {
@@ -270,1689 +546,819 @@ export default function AdminPage() {
     }
   }
 
-  /* =========================
-     LOAD PAYMENT SETTINGS
-  ========================= */
+  // ------------------------------------------------------------
+  // REMOVE LOGO
+  // ------------------------------------------------------------
 
-  async function loadPaymentMethod(
-    methodId: string
-  ) {
-    try {
-      const response =
-        await fetch(
-          `/api/payment-methods?id=${encodeURIComponent(
-            methodId
-          )}`,
-          {
-            cache: "no-store",
-          }
-        )
+  async function removeLogo() {
+    setLogoUrl("")
+    setLogoFile(null)
 
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.error ||
-            "Unable to load payment settings."
-        )
-      }
-
-      const paymentMethod =
-        data.method || data.paymentMethod
-
-      if (paymentMethod) {
-        setMethods((previous) => ({
-          ...previous,
-          [methodId]: paymentMethod,
-        }))
-      }
-    } catch (error) {
-      console.error(
-        "Load payment method error:",
-        error
-      )
-    }
-  }
-
-  useEffect(() => {
-    if (!authorized) return
-
-    METHODS.forEach((method) => {
-      loadPaymentMethod(method.id)
-    })
-  }, [authorized])
-
-  /* =========================
-     CURRENT METHOD
-  ========================= */
-
-  const currentMethod =
-    methods[selectedMethod] || {
-      id: selectedMethod,
-      name:
-        METHODS.find(
-          (method) =>
-            method.id === selectedMethod
-        )?.name || selectedMethod,
-      information: "",
-      wallet_address: "",
-      qr_image_url: "",
-      hero_heading: "",
-      hero_subtitle: "",
-      footer_text: "",
-    }
-
-  function updateCurrentMethod(
-    field: keyof PaymentMethod,
-    value: string
-  ) {
-    setMethods((previous) => ({
-      ...previous,
-      [selectedMethod]: {
-        ...currentMethod,
-        [field]: value,
-      },
-    }))
-  }
-
-  /* =========================
-     QR CHANGE
-  ========================= */
-
-  function handleQrChange(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ]
-
-    if (!allowedTypes.includes(file.type)) {
-      setMessage(
-        "QR code must be JPG, PNG, or WEBP."
-      )
-      return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setMessage(
-        "QR code must be smaller than 5MB."
-      )
-      return
-    }
-
-    setQrFile(file)
+    setSavingLogo(true)
     setMessage("")
-  }
+    setError("")
 
-  /* =========================
-     SAVE PAYMENT SETTINGS
-  ========================= */
-
-  async function savePaymentMethod() {
     try {
-      setSavingMethod(true)
-      setMessage("")
-
-      const formData = new FormData()
-
-      formData.append(
-        "id",
-        selectedMethod
-      )
-
-      formData.append(
-        "information",
-        currentMethod.information || ""
-      )
-
-      formData.append(
-        "wallet_address",
-        currentMethod.wallet_address || ""
-      )
-
-      formData.append(
-        "hero_heading",
-        currentMethod.hero_heading || ""
-      )
-
-      formData.append(
-        "hero_subtitle",
-        currentMethod.hero_subtitle || ""
-      )
-
-      formData.append(
-        "footer_text",
-        currentMethod.footer_text || ""
-      )
-
-      if (qrFile) {
-        formData.append(
-          "qr",
-          qrFile
-        )
-      }
-
-      const response =
-        await fetch("/api/payment-methods", {
-          method: "PUT",
-          body: formData,
-        })
-
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.error ||
-            "Unable to save changes."
-        )
-      }
-
-      setQrFile(null)
-
-      await loadPaymentMethod(
-        selectedMethod
-      )
-
-      setMessage(
-        `${currentMethod.name} settings saved successfully.`
-      )
-    } catch (error) {
-      console.error(
-        "Save payment method error:",
-        error
-      )
-
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to save changes."
-      )
-    } finally {
-      setSavingMethod(false)
-    }
-  }
-
-  /* =========================
-     LOAD WAITING ORDERS
-  ========================= */
-
-  async function loadWaitingOrders() {
-    try {
-      setLoadingOrders(true)
-
-      const response =
-        await fetch("/api/payment-status", {
-          cache: "no-store",
-        })
-
-      if (!response.ok) return
-
-      const data = await response.json()
-
-      if (data.success) {
-        setWaitingOrders(
-          data.orders || []
-        )
-      }
-    } catch (error) {
-      console.error(
-        "Load waiting orders error:",
-        error
-      )
-    } finally {
-      setLoadingOrders(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!authorized) return
-
-    loadWaitingOrders()
-
-    const interval =
-      setInterval(
-        loadWaitingOrders,
-        3000
-      )
-
-    return () =>
-      clearInterval(interval)
-  }, [authorized])
-
-  /* =========================
-     UPDATE ORDER STATUS
-  ========================= */
-
-  async function updateOrderStatus(
-    orderId: number,
-    status:
-      | "pending"
-      | "confirmed"
-      | "failed"
-  ) {
-    try {
-      const response =
-        await fetch("/api/payment-status", {
+      const response = await fetch(
+        "/api/site-settings",
+        {
           method: "PUT",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
+          credentials: "include",
           body: JSON.stringify({
-            orderId,
+            logo_url: "",
+          }),
+        }
+      )
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Unable to remove logo."
+        )
+      }
+
+      setMessage("Logo removed successfully.")
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to remove logo."
+      )
+    } finally {
+      setSavingLogo(false)
+    }
+  }
+
+  // ------------------------------------------------------------
+  // UPDATE ORDER STATUS
+  // ------------------------------------------------------------
+
+  async function updateOrderStatus(
+    orderId: number | string,
+    status: "pending" | "confirmed" | "failed"
+  ) {
+    setUpdatingOrder(orderId)
+    setMessage("")
+    setError("")
+
+    try {
+      const response = await fetch(
+        "/api/payment-status",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            id: orderId,
             status,
           }),
-        })
+        }
+      )
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
         throw new Error(
-          data.error ||
+          data?.error ||
+            data?.message ||
             "Unable to update payment status."
         )
       }
 
-      await loadWaitingOrders()
-    } catch (error) {
-      console.error(
-        "Update status error:",
-        error
+      setMessage(
+        `Order #${orderId} marked ${status}.`
       )
 
-      alert(
-        error instanceof Error
-          ? error.message
+      await loadOrders()
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err instanceof Error
+          ? err.message
           : "Unable to update payment status."
       )
+    } finally {
+      setUpdatingOrder(null)
     }
   }
 
-  /* =========================
-     LOGOUT
-  ========================= */
+  // ------------------------------------------------------------
+  // LOGOUT
+  // ------------------------------------------------------------
 
   async function logout() {
     try {
-      await fetch(
-        "/api/admin-logout",
-        {
-          method: "POST",
-        }
-      )
-    } catch {
-      // Continue with redirect
+      await fetch("/api/admin-logout", {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch (err) {
+      console.error(err)
     }
 
-    window.location.href = "/"
+    window.location.href = "/admin/login"
   }
 
-  /* =========================
-     LOADING SCREEN
-  ========================= */
+  // ------------------------------------------------------------
+  // LOADING SCREEN
+  // ------------------------------------------------------------
 
   if (checkingAuth) {
     return (
-      <main className="loading-screen">
-        <div className="loading-glow" />
-
-        {logoPreview ? (
-          <img
-            src={logoPreview}
-            alt="Kakobuy"
-            className="loading-logo"
-          />
-        ) : (
-          <div className="loading-brand">
-            KAKO<span>BUY</span>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-3xl font-black tracking-widest text-red-500">
+            KAKOBUY
           </div>
-        )}
 
-        <div className="loading-spinner" />
-
-        <p>Checking administrator access...</p>
-
-        <style jsx>{`
-          .loading-screen {
-            min-height: 100vh;
-            background:
-              radial-gradient(
-                circle at 50% 40%,
-                rgba(255, 0, 0, 0.18),
-                transparent 35%
-              ),
-              #050505;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-          }
-
-          .loading-glow {
-            position: absolute;
-            width: 280px;
-            height: 280px;
-            background: rgba(255, 0, 0, 0.12);
-            filter: blur(80px);
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-          }
-
-          .loading-logo {
-            width: 130px;
-            height: 130px;
-            object-fit: contain;
-            border-radius: 24px;
-            position: relative;
-            z-index: 2;
-            animation: logoFloat 2s ease-in-out infinite;
-          }
-
-          .loading-brand {
-            font-size: 42px;
-            font-weight: 900;
-            letter-spacing: -3px;
-            position: relative;
-            z-index: 2;
-          }
-
-          .loading-brand span {
-            color: #ff2020;
-          }
-
-          .loading-spinner {
-            width: 34px;
-            height: 34px;
-            border: 3px solid rgba(255, 255, 255, 0.15);
-            border-top-color: #ff2020;
-            border-radius: 50%;
-            margin-top: 28px;
-            animation: spin 0.8s linear infinite;
-            position: relative;
-            z-index: 2;
-          }
-
-          p {
-            color: #999;
-            margin-top: 14px;
-            font-size: 13px;
-            position: relative;
-            z-index: 2;
-          }
-
-          @keyframes spin {
-            to {
-              transform: rotate(360deg);
-            }
-          }
-
-          @keyframes pulse {
-            50% {
-              transform: scale(1.2);
-              opacity: 0.6;
-            }
-          }
-
-          @keyframes logoFloat {
-            50% {
-              transform: translateY(-7px);
-            }
-          }
-        `}</style>
+          <p className="mt-3 text-gray-400">
+            Checking admin access...
+          </p>
+        </div>
       </main>
     )
   }
 
+  // ------------------------------------------------------------
+  // NOT LOGGED IN
+  // ------------------------------------------------------------
+
   if (!authorized) {
     return (
-      <main className="unauthorized">
-        <div className="unauthorized-card">
-          <div className="unauthorized-brand">
-            {logoPreview ? (
-              <img
-                src={logoPreview}
-                alt="Kakobuy"
-              />
-            ) : (
-              <>
-                KAKO<span>BUY</span>
-              </>
-            )}
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-5">
+        <div className="w-full max-w-md rounded-3xl border border-red-500/30 bg-zinc-950 p-8 text-center shadow-2xl shadow-red-950/30">
+          <div className="text-4xl font-black tracking-widest text-red-500">
+            KAKOBUY
           </div>
 
-          <h1>Administrator Access</h1>
+          <h1 className="mt-6 text-2xl font-bold">
+            Admin Login Required
+          </h1>
 
-          <p>
-            You are not authorized to view
-            this page.
+          <p className="mt-3 text-gray-400">
+            You need to log in before opening the
+            admin dashboard.
           </p>
+
+          <button
+            onClick={() =>
+              (window.location.href =
+                "/admin/login")
+            }
+            className="mt-7 w-full rounded-xl bg-red-600 py-4 font-bold text-white transition hover:bg-red-500 active:scale-[0.98]"
+          >
+            LOGIN
+          </button>
 
           <button
             onClick={() =>
               (window.location.href = "/")
             }
+            className="mt-3 w-full rounded-xl border border-zinc-700 py-4 font-semibold text-gray-300 transition hover:bg-zinc-900"
           >
-            Go Back
+            GO BACK
           </button>
         </div>
-
-        <style jsx>{`
-          .unauthorized {
-            min-height: 100vh;
-            background: #050505;
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-          }
-
-          .unauthorized-card {
-            width: 100%;
-            max-width: 420px;
-            background: #111;
-            border: 1px solid #292929;
-            border-radius: 24px;
-            padding: 35px;
-            text-align: center;
-            box-shadow: 0 0 60px rgba(255, 0, 0, 0.1);
-          }
-
-          .unauthorized-brand {
-            margin-bottom: 25px;
-            font-size: 30px;
-            font-weight: 900;
-          }
-
-          .unauthorized-brand img {
-            width: 90px;
-            height: 90px;
-            object-fit: contain;
-          }
-
-          .unauthorized-brand span {
-            color: #ff2020;
-          }
-
-          h1 {
-            margin: 0 0 10px;
-          }
-
-          p {
-            color: #999;
-          }
-
-          button {
-            margin-top: 20px;
-            border: 0;
-            border-radius: 12px;
-            padding: 13px 20px;
-            background: #ff2020;
-            color: white;
-            font-weight: 800;
-            cursor: pointer;
-          }
-        `}</style>
       </main>
     )
   }
 
+  // ------------------------------------------------------------
+  // MAIN DASHBOARD
+  // ------------------------------------------------------------
+
   return (
-    <main className="page">
-      <div className="background-orb orb-one" />
-      <div className="background-orb orb-two" />
+    <main className="min-h-screen bg-black text-white">
+      {/* Background glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-red-600/10 blur-3xl" />
+        <div className="absolute -right-32 top-1/3 h-96 w-96 rounded-full bg-red-700/10 blur-3xl" />
+      </div>
 
-      {/* =========================
-          TOP BAR
-      ========================= */}
+      {/* HEADER */}
+      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4">
+          <div className="flex items-center gap-3">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Kakobuy"
+                className="h-10 w-10 rounded-xl object-cover border border-red-500/30"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600 font-black">
+                K
+              </div>
+            )}
 
-      <header className="topbar">
-        <div className="brand">
-          {logoPreview ? (
-            <img
-              src={logoPreview}
-              alt="Kakobuy"
-              className="brand-logo"
-            />
-          ) : (
-            <div className="brand-text">
-              KAKO<span>BUY</span>
+            <div>
+              <div className="font-black tracking-wider">
+                KAKOBUY
+              </div>
+
+              <div className="text-xs text-gray-500">
+                Admin Dashboard
+              </div>
             </div>
-          )}
-
-          <div className="admin-label">
-            ADMIN
           </div>
-        </div>
 
-        <div className="top-actions">
-          <a
-            href="https://kakobuy-mini.vercel.app/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            PAGE 2
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href="https://kakobuy-mini.vercel.app/"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+            >
+              PAGE 2
+            </a>
 
-          <a
-            href="https://kakobuy-payment-page.vercel.app/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            PAGE 3
-          </a>
+            <a
+              href="https://kakobuy-payment-page.vercel.app/"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+            >
+              PAGE 3
+            </a>
 
-          <button onClick={logout}>
-            LOGOUT
-          </button>
+            <button
+              onClick={logout}
+              className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold hover:bg-red-500"
+            >
+              LOGOUT
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="container">
-        {/* =========================
-            GLOBAL BRAND CONTROL
-        ========================= */}
+      <div className="relative mx-auto max-w-7xl px-4 py-6">
+        {/* TITLE */}
+        <section className="mb-6">
+          <h1 className="text-3xl font-black sm:text-4xl">
+            Payment Control
+          </h1>
 
-        <section className="card brand-card">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">
-                GLOBAL BRAND CONTROL
-              </span>
-
-              <h1>Kakobuy Logo</h1>
-
-              <p>
-                Change the logo used across
-                the Kakobuy pages.
-              </p>
-            </div>
-          </div>
-
-          <div className="logo-editor">
-            <div className="logo-preview-box">
-              {loadingLogo ? (
-                <div className="preview-loading">
-                  Loading...
-                </div>
-              ) : logoPreview ? (
-                <img
-                  src={logoPreview}
-                  alt="Kakobuy logo preview"
-                  className="logo-preview"
-                />
-              ) : (
-                <div className="preview-placeholder">
-                  KAKO<span>BUY</span>
-                </div>
-              )}
-            </div>
-
-            <div className="logo-controls">
-              <label className="file-button">
-                Choose New Logo
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleLogoChange}
-                />
-              </label>
-
-              <button
-                className="save-button"
-                onClick={saveLogo}
-                disabled={
-                  savingLogo || !logoFile
-                }
-              >
-                {savingLogo
-                  ? "SAVING..."
-                  : "SAVE LOGO"}
-              </button>
-
-              <p className="hint">
-                JPG, PNG or WEBP. Maximum
-                size: 5MB.
-              </p>
-
-              {logoMessage && (
-                <div className="success-message">
-                  {logoMessage}
-                </div>
-              )}
-            </div>
-          </div>
+          <p className="mt-2 text-sm text-gray-400">
+            Manage Kakobuy payment methods, QR codes,
+            shared logo and buyer payment submissions.
+          </p>
         </section>
 
-        {/* =========================
-            PAYMENT SETTINGS
-        ========================= */}
-
-        <section className="card">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">
-                PAGE 3 CONTROL
-              </span>
-
-              <h1>Payment Settings</h1>
-
-              <p>
-                Manage the information buyers
-                see for each cryptocurrency.
-              </p>
-            </div>
+        {/* MESSAGES */}
+        {message && (
+          <div className="mb-5 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-400">
+            {message}
           </div>
+        )}
 
-          <div className="method-tabs">
-            {METHODS.map((method) => (
-              <button
-                key={method.id}
-                className={
-                  selectedMethod ===
-                  method.id
-                    ? "method-tab active"
-                    : "method-tab"
-                }
-                onClick={() => {
-                  setSelectedMethod(
-                    method.id
-                  )
-                  setQrFile(null)
-                  setMessage("")
-                }}
-              >
-                <span>
-                  {method.symbol}
-                </span>
-
-                {method.name}
-              </button>
-            ))}
+        {error && (
+          <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {error}
           </div>
+        )}
 
-          <div className="settings-grid">
-            <div className="field full">
-              <label>
-                Hero Heading
-              </label>
+        {loading ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-10 text-center text-gray-400">
+            Loading admin dashboard...
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* ------------------------------------------------ */}
+            {/* SHARED LOGO */}
+            {/* ------------------------------------------------ */}
 
-              <input
-                value={
-                  currentMethod.hero_heading
-                }
-                onChange={(event) =>
-                  updateCurrentMethod(
-                    "hero_heading",
-                    event.target.value
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+              <div className="mb-5">
+                <h2 className="text-xl font-black">
+                  Shared Kakobuy Logo
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  This logo can appear across your
+                  Kakobuy payment pages.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-zinc-700 bg-black">
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt="Kakobuy logo preview"
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-4xl font-black text-red-500">
+                      K
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1">
+                  <label className="mb-2 block text-sm font-semibold">
+                    Upload Logo
+                  </label>
+
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleLogoImage}
+                    className="block w-full rounded-xl border border-zinc-700 bg-black p-3 text-sm text-gray-300 file:mr-4 file:rounded-lg file:border-0 file:bg-red-600 file:px-4 file:py-2 file:font-bold file:text-white"
+                  />
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={saveLogo}
+                      disabled={savingLogo}
+                      className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold hover:bg-red-500 disabled:opacity-50"
+                    >
+                      {savingLogo
+                        ? "SAVING..."
+                        : "SAVE LOGO"}
+                    </button>
+
+                    <button
+                      onClick={removeLogo}
+                      disabled={savingLogo}
+                      className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-bold text-gray-300 hover:bg-zinc-900 disabled:opacity-50"
+                    >
+                      REMOVE
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ------------------------------------------------ */}
+            {/* PAYMENT METHODS */}
+            {/* ------------------------------------------------ */}
+
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+              <div className="mb-5">
+                <h2 className="text-xl font-black">
+                  Payment Methods
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Choose a coin and edit the information
+                  buyers see on Page 3.
+                </p>
+              </div>
+
+              {/* COIN BUTTONS */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {COINS.map((coin) => {
+                  const selected =
+                    selectedCoin === coin.id
+
+                  return (
+                    <button
+                      key={coin.id}
+                      onClick={() => {
+                        setSelectedCoin(coin.id)
+                        setMessage("")
+                        setError("")
+                      }}
+                      className={`rounded-xl border p-4 text-left transition ${
+                        selected
+                          ? "border-red-500 bg-red-600/10 shadow-lg shadow-red-950/30"
+                          : "border-zinc-800 bg-black hover:border-zinc-600"
+                      }`}
+                    >
+                      <div
+                        className={`text-2xl font-black ${
+                          selected
+                            ? "text-red-500"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {coin.symbol}
+                      </div>
+
+                      <div className="mt-2 text-sm font-bold">
+                        {coin.name}
+                      </div>
+                    </button>
                   )
-                }
-                placeholder="Complete Your Payment"
-              />
-            </div>
+                })}
+              </div>
 
-            <div className="field full">
-              <label>
-                Hero Subtitle
-              </label>
+              {/* FORM */}
+              <div className="mt-7 space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Payment Name
+                  </label>
 
-              <textarea
-                value={
-                  currentMethod.hero_subtitle
-                }
-                onChange={(event) =>
-                  updateCurrentMethod(
-                    "hero_subtitle",
-                    event.target.value
-                  )
-                }
-                placeholder="Send your payment using the selected cryptocurrency."
-              />
-            </div>
-
-            <div className="field full">
-              <label>
-                Payment Information
-              </label>
-
-              <textarea
-                value={
-                  currentMethod.information
-                }
-                onChange={(event) =>
-                  updateCurrentMethod(
-                    "information",
-                    event.target.value
-                  )
-                }
-                placeholder="Payment instructions..."
-              />
-            </div>
-
-            <div className="field full">
-              <label>
-                Wallet Address
-              </label>
-
-              <textarea
-                value={
-                  currentMethod.wallet_address
-                }
-                onChange={(event) =>
-                  updateCurrentMethod(
-                    "wallet_address",
-                    event.target.value
-                  )
-                }
-                placeholder="Enter wallet address"
-              />
-            </div>
-
-            <div className="field full">
-              <label>
-                QR Code
-              </label>
-
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={handleQrChange}
-              />
-
-              <p className="hint">
-                JPG, PNG or WEBP. Maximum
-                size: 5MB.
-              </p>
-
-              {currentMethod.qr_image_url && (
-                <div className="qr-preview">
-                  <img
-                    src={
-                      currentMethod.qr_image_url
+                  <input
+                    value={currentMethod.name}
+                    onChange={(event) =>
+                      updateMethod(
+                        "name",
+                        event.target.value
+                      )
                     }
-                    alt={`${currentMethod.name} QR code`}
+                    className="w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-red-500"
                   />
                 </div>
-              )}
-            </div>
 
-            <div className="field full">
-              <label>
-                Footer Text
-              </label>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Wallet Address
+                  </label>
 
-              <textarea
-                value={
-                  currentMethod.footer_text
-                }
-                onChange={(event) =>
-                  updateCurrentMethod(
-                    "footer_text",
-                    event.target.value
-                  )
-                }
-                placeholder="Kakobuy"
-              />
-            </div>
-          </div>
+                  <textarea
+                    value={
+                      currentMethod.wallet_address
+                    }
+                    onChange={(event) =>
+                      updateMethod(
+                        "wallet_address",
+                        event.target.value
+                      )
+                    }
+                    rows={3}
+                    placeholder="Enter wallet address"
+                    className="w-full resize-none rounded-xl border border-zinc-700 bg-black px-4 py-3 font-mono text-sm text-white outline-none focus:border-red-500"
+                  />
+                </div>
 
-          {message && (
-            <div className="save-message">
-              {message}
-            </div>
-          )}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Payment Information
+                  </label>
 
-          <button
-            className="main-save"
-            onClick={savePaymentMethod}
-            disabled={savingMethod}
-          >
-            {savingMethod
-              ? "SAVING..."
-              : `SAVE ${currentMethod.name.toUpperCase()} SETTINGS`}
-          </button>
-        </section>
+                  <textarea
+                    value={
+                      currentMethod.information
+                    }
+                    onChange={(event) =>
+                      updateMethod(
+                        "information",
+                        event.target.value
+                      )
+                    }
+                    rows={4}
+                    placeholder="Payment instructions..."
+                    className="w-full resize-none rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm text-white outline-none focus:border-red-500"
+                  />
+                </div>
 
-        {/* =========================
-            PAYMENT QUEUE
-        ========================= */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Hero Heading
+                  </label>
 
-        <section className="card">
-          <div className="section-heading queue-heading">
-            <div>
-              <span className="eyebrow">
-                LIVE PAYMENT QUEUE
-              </span>
+                  <input
+                    value={
+                      currentMethod.hero_heading
+                    }
+                    onChange={(event) =>
+                      updateMethod(
+                        "hero_heading",
+                        event.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-red-500"
+                  />
+                </div>
 
-              <h1>Waiting for Confirmation</h1>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Hero Subtitle
+                  </label>
 
-              <p>
-                Buyer payment submissions
-                appear here automatically.
-              </p>
-            </div>
+                  <textarea
+                    value={
+                      currentMethod.hero_subtitle
+                    }
+                    onChange={(event) =>
+                      updateMethod(
+                        "hero_subtitle",
+                        event.target.value
+                      )
+                    }
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-red-500"
+                  />
+                </div>
 
-            <div className="queue-count">
-              {waitingOrders.length}
-            </div>
-          </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Footer Text
+                  </label>
 
-          {loadingOrders &&
-          waitingOrders.length === 0 ? (
-            <div className="empty-state">
-              Loading payment submissions...
-            </div>
-          ) : waitingOrders.length === 0 ? (
-            <div className="empty-state">
-              No payment submissions waiting
-              for confirmation.
-            </div>
-          ) : (
-            <div className="orders">
-              {waitingOrders.map(
-                (order) => (
-                  <div
-                    className="order-card"
-                    key={order.id}
-                  >
-                    <div className="order-top">
-                      <div>
-                        <div className="order-id">
-                          ORDER #{order.id}
-                        </div>
+                  <input
+                    value={
+                      currentMethod.footer_text
+                    }
+                    onChange={(event) =>
+                      updateMethod(
+                        "footer_text",
+                        event.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-red-500"
+                  />
+                </div>
 
-                        <h2>
-                          {order.full_name ||
-                            "Customer"}
-                        </h2>
+                {/* QR */}
+                <div className="rounded-2xl border border-zinc-800 bg-black p-4">
+                  <div className="mb-4">
+                    <h3 className="font-bold">
+                      QR Code
+                    </h3>
 
-                        <p>
-                          {order.email}
-                        </p>
-                      </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      JPG, PNG or WEBP. Maximum 5MB.
+                    </p>
+                  </div>
 
-                      <div className="amount">
-                        $
-                        {Number(
-                          order.total || 0
-                        ).toFixed(2)}
-                      </div>
-                    </div>
-
-                    <div className="order-info">
-                      <div>
-                        <span>
-                          METHOD
-                        </span>
-
-                        <strong>
-                          {order.payment_method ||
-                            "Not selected"}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>
-                          WALLET
-                        </span>
-
-                        <strong>
-                          {order.wallet_copied
-                            ? "COPIED"
-                            : "NOT COPIED"}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>
-                          SUBMITTED
-                        </span>
-
-                        <strong>
-                          {order.transaction_submitted
-                            ? "YES"
-                            : "NO"}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {order.transaction_image && (
-                      <div className="transaction-image">
+                  {currentMethod.qr_image_url ? (
+                    <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="flex h-48 w-48 items-center justify-center overflow-hidden rounded-xl border border-zinc-700 bg-white">
                         <img
                           src={
-                            order.transaction_image
+                            currentMethod.qr_image_url
                           }
-                          alt="Payment transaction"
+                          alt={`${currentMethod.name} QR code`}
+                          className="h-full w-full object-contain"
                         />
-
-                        <a
-                          href={
-                            order.transaction_image
-                          }
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          VIEW FULL IMAGE
-                        </a>
                       </div>
-                    )}
-
-                    <div className="status-actions">
-                      <button
-                        className="pending"
-                        onClick={() =>
-                          updateOrderStatus(
-                            order.id,
-                            "pending"
-                          )
-                        }
-                      >
-                        PENDING
-                      </button>
 
                       <button
-                        className="confirmed"
-                        onClick={() =>
-                          updateOrderStatus(
-                            order.id,
-                            "confirmed"
-                          )
-                        }
+                        onClick={removeQr}
+                        className="rounded-xl border border-red-500/40 px-4 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10"
                       >
-                        CONFIRMED
-                      </button>
-
-                      <button
-                        className="failed"
-                        onClick={() =>
-                          updateOrderStatus(
-                            order.id,
-                            "failed"
-                          )
-                        }
-                      >
-                        FAILED
+                        REMOVE QR
                       </button>
                     </div>
-                  </div>
-                )
+                  ) : (
+                    <div className="mb-4 rounded-xl border border-dashed border-zinc-700 p-8 text-center text-sm text-gray-500">
+                      No QR code uploaded.
+                    </div>
+                  )}
+
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleQrImage}
+                    className="block w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-sm text-gray-300 file:mr-4 file:rounded-lg file:border-0 file:bg-red-600 file:px-4 file:py-2 file:font-bold file:text-white"
+                  />
+                </div>
+
+                <button
+                  onClick={savePaymentMethod}
+                  disabled={saving}
+                  className="w-full rounded-xl bg-red-600 py-4 font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving
+                    ? "SAVING..."
+                    : `SAVE ${currentMethod.name.toUpperCase()} SETTINGS`}
+                </button>
+              </div>
+            </section>
+
+            {/* ------------------------------------------------ */}
+            {/* ORDERS / PAYMENT SUBMISSIONS */}
+            {/* ------------------------------------------------ */}
+
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+              <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                <div>
+                  <h2 className="text-xl font-black">
+                    Payment Submissions
+                  </h2>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    Review buyer transaction screenshots
+                    and confirm or reject payments.
+                  </p>
+                </div>
+
+                <button
+                  onClick={loadOrders}
+                  disabled={loadingOrders}
+                  className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-bold hover:bg-zinc-900 disabled:opacity-50"
+                >
+                  {loadingOrders
+                    ? "REFRESHING..."
+                    : "REFRESH"}
+                </button>
+              </div>
+
+              {orders.length === 0 ? (
+                <div className="rounded-xl border border-zinc-800 bg-black p-8 text-center">
+                  <div className="text-3xl">📭</div>
+
+                  <p className="mt-3 font-bold">
+                    No payment submissions
+                  </p>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    New buyer payment submissions will
+                    appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {orders.map((order) => {
+                    const status =
+                      order.payment_status ||
+                      order.paymentStatus ||
+                      "pending"
+
+                    const image =
+                      order.transaction_image ||
+                      order.transactionImage ||
+                      ""
+
+                    const product =
+                      order.product_name ||
+                      order.productName ||
+                      "Order"
+
+                    const customer =
+                      order.full_name ||
+                      order.fullName ||
+                      "Customer"
+
+                    const paymentMethod =
+                      order.payment_method ||
+                      order.paymentMethod ||
+                      "Not specified"
+
+                    const total =
+                      order.total ?? ""
+
+                    const created =
+                      order.transaction_submitted_at ||
+                      order.transaction_submittedAt ||
+                      order.created_at ||
+                      order.createdAt ||
+                      ""
+
+                    return (
+                      <div
+                        key={String(order.id)}
+                        className="overflow-hidden rounded-2xl border border-zinc-800 bg-black"
+                      >
+                        <div className="p-4">
+                          <div className="flex flex-col justify-between gap-4 sm:flex-row">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-lg font-black">
+                                  Order #{order.id}
+                                </span>
+
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
+                                    status === "confirmed"
+                                      ? "bg-green-500/10 text-green-400"
+                                      : status === "failed"
+                                      ? "bg-red-500/10 text-red-400"
+                                      : "bg-yellow-500/10 text-yellow-400"
+                                  }`}
+                                >
+                                  {status}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 space-y-1 text-sm">
+                                <p>
+                                  <span className="text-gray-500">
+                                    Product:
+                                  </span>{" "}
+                                  {product}
+                                </p>
+
+                                <p>
+                                  <span className="text-gray-500">
+                                    Customer:
+                                  </span>{" "}
+                                  {customer}
+                                </p>
+
+                                {order.email && (
+                                  <p className="break-all">
+                                    <span className="text-gray-500">
+                                      Email:
+                                    </span>{" "}
+                                    {order.email}
+                                  </p>
+                                )}
+
+                                <p>
+                                  <span className="text-gray-500">
+                                    Payment:
+                                  </span>{" "}
+                                  {paymentMethod}
+                                </p>
+
+                                <p>
+                                  <span className="text-gray-500">
+                                    Total:
+                                  </span>{" "}
+                                  {total}
+                                </p>
+
+                                {created && (
+                                  <p className="text-xs text-gray-600">
+                                    {new Date(
+                                      created
+                                    ).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {image && (
+                              <a
+                                href={image}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block"
+                              >
+                                <img
+                                  src={image}
+                                  alt="Transaction screenshot"
+                                  className="h-40 w-40 rounded-xl border border-zinc-700 object-cover"
+                                />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* STATUS BUTTONS */}
+                          <div className="mt-5 grid grid-cols-3 gap-2">
+                            <button
+                              onClick={() =>
+                                updateOrderStatus(
+                                  order.id,
+                                  "pending"
+                                )
+                              }
+                              disabled={
+                                updatingOrder ===
+                                order.id
+                              }
+                              className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-3 py-3 text-xs font-bold text-yellow-400 hover:bg-yellow-500/10 disabled:opacity-50"
+                            >
+                              PENDING
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                updateOrderStatus(
+                                  order.id,
+                                  "confirmed"
+                                )
+                              }
+                              disabled={
+                                updatingOrder ===
+                                order.id
+                              }
+                              className="rounded-xl border border-green-500/30 bg-green-500/5 px-3 py-3 text-xs font-bold text-green-400 hover:bg-green-500/10 disabled:opacity-50"
+                            >
+                              CONFIRMED
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                updateOrderStatus(
+                                  order.id,
+                                  "failed"
+                                )
+                              }
+                              disabled={
+                                updatingOrder ===
+                                order.id
+                              }
+                              className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 text-xs font-bold text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                            >
+                              FAILED
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
-            </div>
-          )}
-        </section>
-
-        <footer>
-          {logoPreview ? (
-            <img
-              src={logoPreview}
-              alt="Kakobuy"
-              className="footer-logo"
-            />
-          ) : (
-            <div className="footer-brand">
-              KAKO<span>BUY</span>
-            </div>
-          )}
-
-          <p>
-            Kakobuy Administrator Panel
-          </p>
-        </footer>
+            </section>
+          </div>
+        )}
       </div>
-
-      <style jsx>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .page {
-          min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 20% 10%,
-              rgba(255, 0, 0, 0.11),
-              transparent 30%
-            ),
-            radial-gradient(
-              circle at 80% 40%,
-              rgba(255, 0, 0, 0.08),
-              transparent 32%
-            ),
-            #050505;
-          color: white;
-          padding-bottom: 50px;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .background-orb {
-          position: fixed;
-          border-radius: 50%;
-          filter: blur(90px);
-          pointer-events: none;
-          opacity: 0.2;
-        }
-
-        .orb-one {
-          width: 300px;
-          height: 300px;
-          background: #ff0000;
-          top: 5%;
-          left: -150px;
-          animation: orbMove 8s ease-in-out infinite;
-        }
-
-        .orb-two {
-          width: 260px;
-          height: 260px;
-          background: #ff0000;
-          right: -130px;
-          top: 45%;
-          animation: orbMove 10s ease-in-out infinite reverse;
-        }
-
-        .topbar {
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          min-height: 72px;
-          padding: 12px 18px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          background: rgba(5, 5, 5, 0.88);
-          backdrop-filter: blur(18px);
-          border-bottom: 1px solid #222;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .brand-logo {
-          width: 44px;
-          height: 44px;
-          object-fit: contain;
-          border-radius: 10px;
-        }
-
-        .brand-text {
-          font-size: 24px;
-          font-weight: 950;
-          letter-spacing: -2px;
-        }
-
-        .brand-text span,
-        .footer-brand span {
-          color: #ff2020;
-        }
-
-        .admin-label {
-          font-size: 9px;
-          font-weight: 900;
-          color: #ff3030;
-          border: 1px solid rgba(255, 32, 32, 0.4);
-          padding: 4px 7px;
-          border-radius: 5px;
-        }
-
-        .top-actions {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-        }
-
-        .top-actions a,
-        .top-actions button {
-          text-decoration: none;
-          color: #ddd;
-          background: #111;
-          border: 1px solid #292929;
-          border-radius: 8px;
-          padding: 9px 10px;
-          font-size: 9px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .top-actions a:hover,
-        .top-actions button:hover {
-          border-color: #ff2020;
-          color: white;
-        }
-
-        .container {
-          width: min(100% - 28px, 1050px);
-          margin: 0 auto;
-          position: relative;
-          z-index: 2;
-        }
-
-        .card {
-          margin-top: 25px;
-          background: rgba(15, 15, 15, 0.9);
-          border: 1px solid #252525;
-          border-radius: 22px;
-          padding: 22px;
-          box-shadow:
-            0 25px 80px rgba(0, 0, 0, 0.35),
-            inset 0 1px rgba(255, 255, 255, 0.025);
-        }
-
-        .brand-card {
-          border-color: rgba(255, 32, 32, 0.25);
-        }
-
-        .section-heading {
-          margin-bottom: 20px;
-        }
-
-        .section-heading h1 {
-          font-size: clamp(25px, 5vw, 38px);
-          margin: 5px 0;
-          letter-spacing: -1.5px;
-        }
-
-        .section-heading p {
-          color: #888;
-          margin: 0;
-          line-height: 1.5;
-          font-size: 13px;
-        }
-
-        .eyebrow {
-          color: #ff3030;
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1.8px;
-        }
-
-        .logo-editor {
-          display: grid;
-          grid-template-columns: 190px 1fr;
-          gap: 22px;
-          align-items: center;
-        }
-
-        .logo-preview-box {
-          width: 190px;
-          height: 190px;
-          border-radius: 22px;
-          border: 1px dashed #444;
-          background: #090909;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          overflow: hidden;
-        }
-
-        .logo-preview {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          padding: 15px;
-        }
-
-        .preview-placeholder {
-          font-size: 28px;
-          font-weight: 950;
-          letter-spacing: -2px;
-        }
-
-        .preview-placeholder span {
-          color: #ff2020;
-        }
-
-        .preview-loading {
-          color: #777;
-          font-size: 12px;
-        }
-
-        .logo-controls {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 12px;
-        }
-
-        .file-button,
-        .save-button {
-          display: inline-flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 45px;
-          padding: 0 17px;
-          border-radius: 11px;
-          font-weight: 900;
-          font-size: 11px;
-          cursor: pointer;
-        }
-
-        .file-button {
-          background: #191919;
-          border: 1px solid #383838;
-          color: white;
-        }
-
-        .file-button input {
-          display: none;
-        }
-
-        .save-button {
-          border: 0;
-          background: #ff2020;
-          color: white;
-          box-shadow: 0 8px 30px rgba(255, 0, 0, 0.2);
-        }
-
-        .save-button:disabled,
-        .main-save:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
-        }
-
-        .hint {
-          color: #666;
-          font-size: 11px;
-          margin: 0;
-        }
-
-        .success-message,
-        .save-message {
-          background: rgba(0, 180, 90, 0.1);
-          border: 1px solid rgba(0, 200, 100, 0.25);
-          color: #70e0a0;
-          border-radius: 10px;
-          padding: 11px 13px;
-          font-size: 11px;
-        }
-
-        .method-tabs {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          margin-bottom: 20px;
-        }
-
-        .method-tab {
-          border: 1px solid #282828;
-          background: #0b0b0b;
-          color: #888;
-          border-radius: 12px;
-          padding: 14px 8px;
-          font-size: 11px;
-          font-weight: 900;
-          cursor: pointer;
-          transition: 0.2s;
-        }
-
-        .method-tab span {
-          display: block;
-          color: #666;
-          margin-bottom: 4px;
-          font-size: 16px;
-        }
-
-        .method-tab.active {
-          color: white;
-          border-color: #ff2020;
-          background: rgba(255, 32, 32, 0.1);
-          box-shadow: 0 0 25px rgba(255, 0, 0, 0.08);
-        }
-
-        .method-tab.active span {
-          color: #ff2020;
-        }
-
-        .settings-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 16px;
-        }
-
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 7px;
-        }
-
-        .field.full {
-          grid-column: 1 / -1;
-        }
-
-        .field label {
-          font-size: 10px;
-          font-weight: 900;
-          color: #aaa;
-          text-transform: uppercase;
-          letter-spacing: 0.8px;
-        }
-
-        input,
-        textarea {
-          width: 100%;
-          border: 1px solid #292929;
-          background: #090909;
-          color: white;
-          border-radius: 11px;
-          padding: 13px;
-          outline: none;
-          font: inherit;
-          font-size: 13px;
-        }
-
-        input:focus,
-        textarea:focus {
-          border-color: #ff2020;
-          box-shadow: 0 0 0 3px rgba(255, 0, 0, 0.06);
-        }
-
-        textarea {
-          min-height: 100px;
-          resize: vertical;
-        }
-
-        .qr-preview {
-          margin-top: 8px;
-          width: 160px;
-          height: 160px;
-          border-radius: 15px;
-          overflow: hidden;
-          background: white;
-          padding: 8px;
-        }
-
-        .qr-preview img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-        }
-
-        .main-save {
-          width: 100%;
-          border: 0;
-          border-radius: 12px;
-          min-height: 50px;
-          margin-top: 18px;
-          background: #ff2020;
-          color: white;
-          font-weight: 950;
-          cursor: pointer;
-          box-shadow: 0 12px 35px rgba(255, 0, 0, 0.18);
-        }
-
-        .queue-heading {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          align-items: flex-start;
-        }
-
-        .queue-count {
-          min-width: 45px;
-          height: 45px;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          border-radius: 13px;
-          background: rgba(255, 32, 32, 0.12);
-          border: 1px solid rgba(255, 32, 32, 0.35);
-          color: #ff3030;
-          font-weight: 950;
-        }
-
-        .empty-state {
-          text-align: center;
-          padding: 50px 15px;
-          color: #666;
-          border: 1px dashed #292929;
-          border-radius: 15px;
-          font-size: 13px;
-        }
-
-        .orders {
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-        }
-
-        .order-card {
-          border: 1px solid #292929;
-          border-radius: 17px;
-          background: #0a0a0a;
-          padding: 17px;
-        }
-
-        .order-top {
-          display: flex;
-          justify-content: space-between;
-          gap: 15px;
-        }
-
-        .order-id {
-          color: #ff3030;
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1px;
-        }
-
-        .order-card h2 {
-          margin: 5px 0 2px;
-          font-size: 18px;
-        }
-
-        .order-card p {
-          margin: 0;
-          color: #777;
-          font-size: 12px;
-        }
-
-        .amount {
-          color: #fff;
-          font-size: 20px;
-          font-weight: 950;
-          white-space: nowrap;
-        }
-
-        .order-info {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 16px;
-        }
-
-        .order-info > div {
-          background: #111;
-          border: 1px solid #202020;
-          border-radius: 10px;
-          padding: 10px;
-        }
-
-        .order-info span {
-          display: block;
-          color: #555;
-          font-size: 8px;
-          font-weight: 900;
-          margin-bottom: 5px;
-        }
-
-        .order-info strong {
-          font-size: 10px;
-          color: #ddd;
-        }
-
-        .transaction-image {
-          margin-top: 15px;
-          padding: 12px;
-          background: #111;
-          border-radius: 13px;
-          border: 1px solid #222;
-        }
-
-        .transaction-image img {
-          width: 100%;
-          max-height: 400px;
-          object-fit: contain;
-          border-radius: 9px;
-          background: #000;
-        }
-
-        .transaction-image a {
-          display: inline-block;
-          margin-top: 10px;
-          color: #ff3030;
-          font-size: 10px;
-          font-weight: 900;
-          text-decoration: none;
-        }
-
-        .status-actions {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 14px;
-        }
-
-        .status-actions button {
-          min-height: 42px;
-          border-radius: 10px;
-          cursor: pointer;
-          font-size: 10px;
-          font-weight: 950;
-          border: 1px solid;
-          background: transparent;
-        }
-
-        .status-actions .pending {
-          color: #e8b84b;
-          border-color: rgba(232, 184, 75, 0.3);
-        }
-
-        .status-actions .confirmed {
-          color: #5be09a;
-          border-color: rgba(91, 224, 154, 0.3);
-        }
-
-        .status-actions .failed {
-          color: #ff4444;
-          border-color: rgba(255, 68, 68, 0.3);
-        }
-
-        .status-actions button:hover {
-          background: rgba(255, 255, 255, 0.05);
-        }
-
-        footer {
-          text-align: center;
-          padding: 35px 10px;
-          color: #555;
-          font-size: 11px;
-        }
-
-        .footer-logo {
-          width: 55px;
-          height: 55px;
-          object-fit: contain;
-          margin-bottom: 8px;
-        }
-
-        .footer-brand {
-          font-size: 20px;
-          font-weight: 950;
-          letter-spacing: -1px;
-          color: white;
-        }
-
-        @keyframes orbMove {
-          0%,
-          100% {
-            transform: translate(0, 0);
-          }
-
-          50% {
-            transform: translate(30px, 25px);
-          }
-        }
-
-        @media (max-width: 700px) {
-          .topbar {
-            padding: 10px 12px;
-          }
-
-          .admin-label {
-            display: none;
-          }
-
-          .brand-logo {
-            width: 38px;
-            height: 38px;
-          }
-
-          .brand-text {
-            font-size: 20px;
-          }
-
-          .top-actions a,
-          .top-actions button {
-            padding: 8px 7px;
-            font-size: 8px;
-          }
-
-          .container {
-            width: min(100% - 18px, 1050px);
-          }
-
-          .card {
-            padding: 16px;
-            border-radius: 18px;
-          }
-
-          .logo-editor {
-            grid-template-columns: 1fr;
-          }
-
-          .logo-preview-box {
-            width: 150px;
-            height: 150px;
-          }
-
-          .settings-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .field.full {
-            grid-column: auto;
-          }
-
-          .method-tabs {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .order-info {
-            grid-template-columns: 1fr;
-          }
-
-          .order-top {
-            flex-direction: column;
-          }
-
-          .amount {
-            font-size: 18px;
-          }
-        }
-      `}</style>
     </main>
   )
 }
