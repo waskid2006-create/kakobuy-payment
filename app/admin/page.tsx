@@ -40,40 +40,48 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [authorized, setAuthorized] = useState(false)
 
-  const [selectedMethod, setSelectedMethod] = useState("bitcoin")
+  const [selectedMethod, setSelectedMethod] =
+    useState("bitcoin")
 
   const [information, setInformation] = useState("")
   const [walletAddress, setWalletAddress] = useState("")
-  const [heroHeading, setHeroHeading] = useState("PAY WITH CRYPTO")
-  const [heroSubtitle, setHeroSubtitle] = useState(
-    "Secure and simple crypto payment"
-  )
-  const [footerText, setFooterText] = useState("KAKOBUY")
+  const [heroHeading, setHeroHeading] =
+    useState("PAY WITH CRYPTO")
+  const [heroSubtitle, setHeroSubtitle] =
+    useState("Secure and simple crypto payment")
+  const [footerText, setFooterText] =
+    useState("KAKOBUY")
 
   const [qrPreview, setQrPreview] = useState("")
-  const [qrFile, setQrFile] = useState<File | null>(null)
+  const [qrFile, setQrFile] =
+    useState<File | null>(null)
 
-  const [loadingSettings, setLoadingSettings] = useState(false)
-  const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsMessage, setSettingsMessage] = useState("")
+  const [loadingSettings, setLoadingSettings] =
+    useState(false)
+  const [savingSettings, setSavingSettings] =
+    useState(false)
+  const [settingsMessage, setSettingsMessage] =
+    useState("")
 
-  const [waitingOrders, setWaitingOrders] = useState<WaitingOrder[]>([])
-  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [waitingOrders, setWaitingOrders] =
+    useState<WaitingOrder[]>([])
+  const [loadingOrders, setLoadingOrders] =
+    useState(false)
 
   const [selectedOrder, setSelectedOrder] =
     useState<WaitingOrder | null>(null)
 
-  const [changingStatus, setChangingStatus] = useState(false)
-  const [statusMessage, setStatusMessage] = useState("")
+  const [changingStatus, setChangingStatus] =
+    useState(false)
+  const [statusMessage, setStatusMessage] =
+    useState("")
 
   /*
-   * Check the admin cookie.
-   *
-   * This calls /api/admin-check.
-   * If the cookie is missing, the administrator
-   * is sent back to the login page.
+   * VERIFY ADMIN LOGIN
    */
   useEffect(() => {
+    let active = true
+
     async function checkAdmin() {
       try {
         const response = await fetch(
@@ -84,35 +92,56 @@ export default function AdminPage() {
         )
 
         if (!response.ok) {
-          window.location.href = "/admin/login"
+          window.location.replace(
+            "/admin/login"
+          )
           return
         }
 
         const data = await response.json()
 
         if (!data?.authenticated) {
-          window.location.href = "/admin/login"
+          window.location.replace(
+            "/admin/login"
+          )
           return
         }
 
-        setAuthorized(true)
+        if (active) {
+          setAuthorized(true)
+        }
       } catch {
-        window.location.href = "/admin/login"
+        window.location.replace(
+          "/admin/login"
+        )
       } finally {
-        setCheckingAuth(false)
+        if (active) {
+          setCheckingAuth(false)
+        }
       }
     }
 
     checkAdmin()
+
+    return () => {
+      active = false
+    }
   }, [])
 
-  async function loadPaymentMethod(methodId: string) {
+  /*
+   * LOAD PAYMENT METHOD SETTINGS
+   */
+  async function loadPaymentMethod(
+    methodId: string
+  ) {
     setLoadingSettings(true)
     setSettingsMessage("")
 
     try {
       const response = await fetch(
-        `/api/payment-methods?id=${encodeURIComponent(methodId)}`,
+        `/api/payment-methods?id=${encodeURIComponent(
+          methodId
+        )}`,
         {
           cache: "no-store",
         }
@@ -127,10 +156,16 @@ export default function AdminPage() {
         )
       }
 
-      const method: PaymentMethod = data.paymentMethod
+      const method: PaymentMethod =
+        data.paymentMethod
 
-      setInformation(method.information || "")
-      setWalletAddress(method.wallet_address || "")
+      setInformation(
+        method.information || ""
+      )
+
+      setWalletAddress(
+        method.wallet_address || ""
+      )
 
       setHeroHeading(
         method.hero_heading ||
@@ -163,7 +198,12 @@ export default function AdminPage() {
     }
   }
 
+  /*
+   * LOAD PAYMENT SUBMISSIONS
+   */
   async function loadWaitingOrders() {
+    if (!authorized) return
+
     setLoadingOrders(true)
 
     try {
@@ -198,12 +238,18 @@ export default function AdminPage() {
     }
   }
 
+  /*
+   * LOAD SELECTED COIN SETTINGS
+   */
   useEffect(() => {
     if (!authorized) return
 
     loadPaymentMethod(selectedMethod)
   }, [selectedMethod, authorized])
 
+  /*
+   * AUTO REFRESH SUBMISSIONS
+   */
   useEffect(() => {
     if (!authorized) return
 
@@ -217,6 +263,9 @@ export default function AdminPage() {
     return () => clearInterval(interval)
   }, [authorized])
 
+  /*
+   * QR IMAGE
+   */
   function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -253,16 +302,19 @@ export default function AdminPage() {
     const reader = new FileReader()
 
     reader.onload = () => {
-      setQrPreview(
+      if (
         typeof reader.result === "string"
-          ? reader.result
-          : ""
-      )
+      ) {
+        setQrPreview(reader.result)
+      }
     }
 
     reader.readAsDataURL(file)
   }
 
+  /*
+   * SAVE COIN SETTINGS
+   */
   async function saveSettings() {
     setSavingSettings(true)
     setSettingsMessage("")
@@ -352,6 +404,9 @@ export default function AdminPage() {
     }
   }
 
+  /*
+   * CHANGE CUSTOMER PAYMENT STATUS
+   */
   async function changeOrderStatus(
     status:
       | "pending"
@@ -369,7 +424,8 @@ export default function AdminPage() {
         {
           method: "PUT",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             orderId: selectedOrder.id,
@@ -423,6 +479,18 @@ export default function AdminPage() {
     }
   }
 
+  /*
+   * LOG OUT
+   */
+  function logout() {
+    document.cookie =
+      "kakobuy_admin=; Max-Age=0; path=/"
+
+    window.location.replace(
+      "/admin/login"
+    )
+  }
+
   function statusLabel(
     status?: string
   ) {
@@ -471,6 +539,9 @@ export default function AdminPage() {
     }
   }
 
+  /*
+   * AUTH LOADING
+   */
   if (checkingAuth) {
     return (
       <main className="auth-loading">
@@ -637,13 +708,7 @@ export default function AdminPage() {
           </button>
 
           <button
-            onClick={() => {
-              document.cookie =
-                "kakobuy_admin=; Max-Age=0; path=/"
-
-              window.location.href =
-                "/admin/login"
-            }}
+            onClick={logout}
             className="logout-button"
           >
             LOG OUT
@@ -829,10 +894,7 @@ export default function AdminPage() {
 
             <div className="customer-box">
               <div>
-                <span>
-                  CUSTOMER
-                </span>
-
+                <span>CUSTOMER</span>
                 <strong>
                   {selectedOrder.full_name ||
                     "Not available"}
@@ -840,10 +902,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <span>
-                  EMAIL
-                </span>
-
+                <span>EMAIL</span>
                 <strong>
                   {selectedOrder.email ||
                     "Not available"}
@@ -851,10 +910,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <span>
-                  AMOUNT
-                </span>
-
+                <span>AMOUNT</span>
                 <strong>
                   {selectedOrder.total}
                 </strong>
@@ -864,7 +920,6 @@ export default function AdminPage() {
                 <span>
                   PAYMENT METHOD
                 </span>
-
                 <strong>
                   {(
                     selectedOrder.payment_method ||
@@ -952,8 +1007,8 @@ export default function AdminPage() {
 
               <p>
                 The buyer cannot change this
-                status. Only this admin control
-                changes what the buyer sees.
+                status. Only the administrator
+                can change it.
               </p>
 
               <div className="status-buttons">
@@ -1263,10 +1318,17 @@ export default function AdminPage() {
           width: 280px;
           height: 280px;
           border-radius: 50%;
-          background: rgba(255, 25, 25, 0.07);
+          background: rgba(
+            255,
+            25,
+            25,
+            0.07
+          );
           filter: blur(70px);
           pointer-events: none;
           z-index: 0;
+          animation: floatGlow 7s ease-in-out
+            infinite;
         }
 
         .glow-one {
@@ -1277,6 +1339,7 @@ export default function AdminPage() {
         .glow-two {
           right: -150px;
           top: 55%;
+          animation-delay: -3s;
         }
 
         .topbar,
@@ -1341,14 +1404,13 @@ export default function AdminPage() {
         }
 
         .top-actions a:hover,
-        .refresh-button:hover {
+        .refresh-button:hover,
+        .logout-button:hover {
           color: #fff;
           border-color: #ff3030;
         }
 
         .logout-button:hover {
-          color: #fff;
-          border-color: #ff3030;
           background: #180808;
         }
 
@@ -1369,7 +1431,11 @@ export default function AdminPage() {
         }
 
         h1 {
-          font-size: clamp(35px, 8vw, 62px);
+          font-size: clamp(
+            35px,
+            8vw,
+            62px
+          );
           line-height: 0.95;
           letter-spacing: -0.06em;
           margin: 0;
@@ -1389,8 +1455,14 @@ export default function AdminPage() {
         }
 
         .live-badge {
-          border: 1px solid rgba(255, 48, 48, 0.25);
-          background: rgba(255, 48, 48, 0.07);
+          border: 1px solid
+            rgba(255, 48, 48, 0.25);
+          background: rgba(
+            255,
+            48,
+            48,
+            0.07
+          );
           color: #ff5555;
           padding: 9px 12px;
           border-radius: 99px;
@@ -1406,7 +1478,8 @@ export default function AdminPage() {
           height: 7px;
           background: #ff3030;
           border-radius: 50%;
-          box-shadow: 0 0 12px #ff3030;
+          box-shadow:
+            0 0 12px #ff3030;
           animation: pulse 1.4s infinite;
         }
 
@@ -1448,18 +1521,34 @@ export default function AdminPage() {
           border: 1px solid #252525;
           border-radius: 15px;
           padding: 17px;
-          background: rgba(15, 15, 15, 0.9);
+          background: rgba(
+            15,
+            15,
+            15,
+            0.9
+          );
           color: #fff;
           cursor: pointer;
           transition: 0.2s ease;
+          width: 100%;
         }
 
         .order-card:hover {
           transform: translateY(-3px);
-          border-color: rgba(255, 48, 48, 0.5);
+          border-color: rgba(
+            255,
+            48,
+            48,
+            0.5
+          );
           box-shadow:
             0 12px 35px
-            rgba(255, 30, 30, 0.09);
+            rgba(
+              255,
+              30,
+              30,
+              0.09
+            );
         }
 
         .order-card-top {
@@ -1486,20 +1575,38 @@ export default function AdminPage() {
         }
 
         .status.pending {
-          background: rgba(255, 174, 0, 0.1);
-          border: 1px solid rgba(255, 174, 0, 0.3);
+          background: rgba(
+            255,
+            174,
+            0,
+            0.1
+          );
+          border: 1px solid
+            rgba(255, 174, 0, 0.3);
           color: #ffc04d;
         }
 
         .status.confirmed {
-          background: rgba(30, 220, 120, 0.1);
-          border: 1px solid rgba(30, 220, 120, 0.3);
+          background: rgba(
+            30,
+            220,
+            120,
+            0.1
+          );
+          border: 1px solid
+            rgba(30, 220, 120, 0.3);
           color: #55e59a;
         }
 
         .status.failed {
-          background: rgba(255, 48, 48, 0.1);
-          border: 1px solid rgba(255, 48, 48, 0.35);
+          background: rgba(
+            255,
+            48,
+            48,
+            0.1
+          );
+          border: 1px solid
+            rgba(255, 48, 48, 0.35);
           color: #ff6969;
         }
 
@@ -1551,7 +1658,12 @@ export default function AdminPage() {
 
         .empty-card,
         .settings-card {
-          background: rgba(14, 14, 14, 0.92);
+          background: rgba(
+            14,
+            14,
+            14,
+            0.92
+          );
           border: 1px solid #222;
           border-radius: 17px;
           padding: 25px;
@@ -1570,8 +1682,14 @@ export default function AdminPage() {
           display: grid;
           place-items: center;
           color: #55e59a;
-          background: rgba(30, 220, 120, 0.08);
-          border: 1px solid rgba(30, 220, 120, 0.2);
+          background: rgba(
+            30,
+            220,
+            120,
+            0.08
+          );
+          border: 1px solid
+            rgba(30, 220, 120, 0.2);
         }
 
         .empty-card strong {
@@ -1593,7 +1711,10 @@ export default function AdminPage() {
 
         .method-tabs {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(
+            4,
+            1fr
+          );
           gap: 8px;
           margin-bottom: 12px;
         }
@@ -1625,10 +1746,20 @@ export default function AdminPage() {
         .method-tab.active {
           color: #fff;
           border-color: #ff3030;
-          background: rgba(255, 48, 48, 0.09);
+          background: rgba(
+            255,
+            48,
+            48,
+            0.09
+          );
           box-shadow:
             0 0 25px
-            rgba(255, 48, 48, 0.1);
+            rgba(
+              255,
+              48,
+              48,
+              0.1
+            );
         }
 
         .method-tab.active strong {
@@ -1696,7 +1827,12 @@ export default function AdminPage() {
           border-color: #ff3030;
           box-shadow:
             0 0 0 2px
-            rgba(255, 48, 48, 0.08);
+            rgba(
+              255,
+              48,
+              48,
+              0.08
+            );
         }
 
         .qr-section {
@@ -1779,14 +1915,26 @@ export default function AdminPage() {
         .settings-success,
         .success-message {
           color: #65e9a0;
-          background: rgba(30, 220, 120, 0.07);
-          border: 1px solid rgba(30, 220, 120, 0.2);
+          background: rgba(
+            30,
+            220,
+            120,
+            0.07
+          );
+          border: 1px solid
+            rgba(30, 220, 120, 0.2);
         }
 
         .settings-error {
           color: #ff7777;
-          background: rgba(255, 48, 48, 0.07);
-          border: 1px solid rgba(255, 48, 48, 0.2);
+          background: rgba(
+            255,
+            48,
+            48,
+            0.07
+          );
+          border: 1px solid
+            rgba(255, 48, 48, 0.2);
         }
 
         .save-button {
@@ -1802,7 +1950,12 @@ export default function AdminPage() {
           cursor: pointer;
           box-shadow:
             0 10px 30px
-            rgba(255, 48, 48, 0.14);
+            rgba(
+              255,
+              48,
+              48,
+              0.14
+            );
         }
 
         .save-button:hover {
@@ -1825,7 +1978,12 @@ export default function AdminPage() {
           position: fixed;
           inset: 0;
           z-index: 100;
-          background: rgba(0, 0, 0, 0.82);
+          background: rgba(
+            0,
+            0,
+            0,
+            0.82
+          );
           backdrop-filter: blur(8px);
           display: flex;
           align-items: center;
@@ -1846,7 +2004,12 @@ export default function AdminPage() {
           padding: 22px;
           box-shadow:
             0 0 70px
-            rgba(255, 30, 30, 0.13);
+            rgba(
+              255,
+              30,
+              30,
+              0.13
+            );
           animation: popup 0.25s ease;
         }
 
@@ -1944,7 +2107,12 @@ export default function AdminPage() {
           position: absolute;
           bottom: 9px;
           right: 9px;
-          background: rgba(0, 0, 0, 0.85);
+          background: rgba(
+            0,
+            0,
+            0,
+            0.85
+          );
           color: #fff;
           padding: 7px 9px;
           border-radius: 7px;
@@ -1989,7 +2157,10 @@ export default function AdminPage() {
 
         .status-buttons {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(
+            3,
+            1fr
+          );
           gap: 8px;
           margin-top: 13px;
         }
@@ -2009,19 +2180,34 @@ export default function AdminPage() {
 
         .pending-button {
           border: 1px solid #705b20;
-          background: rgba(255, 174, 0, 0.08);
+          background: rgba(
+            255,
+            174,
+            0,
+            0.08
+          );
           color: #ffc04d;
         }
 
         .confirmed-button {
           border: 1px solid #237047;
-          background: rgba(30, 220, 120, 0.08);
+          background: rgba(
+            30,
+            220,
+            120,
+            0.08
+          );
           color: #55e59a;
         }
 
         .failed-button {
           border: 1px solid #702323;
-          background: rgba(255, 48, 48, 0.08);
+          background: rgba(
+            255,
+            48,
+            48,
+            0.08
+          );
           color: #ff6969;
         }
 
@@ -2067,6 +2253,23 @@ export default function AdminPage() {
           }
         }
 
+        @keyframes floatGlow {
+          0%,
+          100% {
+            transform: translate(
+              0,
+              0
+            );
+          }
+
+          50% {
+            transform: translate(
+              25px,
+              -20px
+            );
+          }
+        }
+
         @keyframes fadeIn {
           from {
             opacity: 0;
@@ -2080,12 +2283,16 @@ export default function AdminPage() {
         @keyframes popup {
           from {
             opacity: 0;
-            transform: translateY(18px) scale(0.96);
+            transform: translateY(
+                18px
+              )
+              scale(0.96);
           }
 
           to {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: translateY(0)
+              scale(1);
           }
         }
 
