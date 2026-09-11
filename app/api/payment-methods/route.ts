@@ -1,27 +1,22 @@
 import { cookies } from "next/headers"
 import { sql } from "@/app/db"
 
+// ============================================================
+// GET — PUBLIC
+// Buyers need to read payment methods.
+// DO NOT require admin login here.
+// ============================================================
+
 export async function GET(request: Request) {
-  const cookieStore = await cookies()
-const adminCookie = cookieStore.get("kakobuy_admin")?.value
-
-if (adminCookie !== "authenticated") {
-  return Response.json(
-    { success: false, error: "Unauthorized" },
-    { status: 401 }
-  )
-}
   try {
-    const { searchParams } =
-      new URL(request.url)
-
+    const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
 
     if (!id) {
       return Response.json(
         {
-          error:
-            "Missing payment method",
+          success: false,
+          error: "Missing payment method",
         },
         { status: 400 }
       )
@@ -45,8 +40,8 @@ if (adminCookie !== "authenticated") {
     if (result.length === 0) {
       return Response.json(
         {
-          error:
-            "Payment method not found",
+          success: false,
+          error: "Payment method not found",
         },
         { status: 404 }
       )
@@ -56,83 +51,83 @@ if (adminCookie !== "authenticated") {
 
     return Response.json({
       success: true,
+
       paymentMethod: {
         id: row.id,
         name: row.name,
-        information:
-          row.information || "",
-        wallet_address:
-          row.wallet_address || "",
-        qr_image:
-          row.qr_image_url || null,
-        hero_title:
-          row.hero_heading || "",
-        hero_subtitle:
-          row.hero_subtitle || "",
-        footer_text:
-          row.footer_text || "",
+        information: row.information || "",
+        wallet_address: row.wallet_address || "",
+        qr_image_url: row.qr_image_url || "",
+        hero_heading: row.hero_heading || "",
+        hero_subtitle: row.hero_subtitle || "",
+        footer_text: row.footer_text || "",
       },
     })
   } catch (error) {
-    console.error(
-      "Payment method GET error:",
-      error
-    )
+    console.error("Payment method GET error:", error)
 
     return Response.json(
       {
-        error:
-          "Unable to load payment method",
+        success: false,
+        error: "Unable to load payment method",
       },
       { status: 500 }
     )
   }
 }
 
+// ============================================================
+// PUT — ADMIN ONLY
+// Only the logged-in admin can change payment settings.
+// ============================================================
+
 export async function PUT(request: Request) {
   try {
-    const contentType =
-      request.headers.get(
-        "content-type"
-      ) || ""
+    const cookieStore = await cookies()
 
-    if (
-      contentType.includes(
-        "multipart/form-data"
+    const adminCookie =
+      cookieStore.get("kakobuy_admin")?.value
+
+    if (adminCookie !== "authenticated") {
+      return Response.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
       )
-    ) {
-      const formData =
-        await request.formData()
+    }
+
+    const contentType =
+      request.headers.get("content-type") || ""
+
+    // ========================================================
+    // MULTIPART FORM DATA
+    // ========================================================
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
 
       const id =
-        formData.get("id")?.toString()
+        formData.get("id")?.toString() || ""
 
       const information =
-        formData
-          .get("information")
-          ?.toString() || ""
+        formData.get("information")?.toString() || ""
 
       const walletAddress =
-        formData
-          .get("wallet_address")
-          ?.toString() || ""
+        formData.get("wallet_address")?.toString() || ""
 
       const heroHeading =
-        formData
-          .get("hero_heading")
-          ?.toString() ||
+        formData.get("hero_heading")?.toString() ||
         "PAY WITH CRYPTO"
 
       const heroSubtitle =
-        formData
-          .get("hero_subtitle")
-          ?.toString() ||
+        formData.get("hero_subtitle")?.toString() ||
         "Secure and simple crypto payment"
 
       const footerText =
-        formData
-          .get("footer_text")
-          ?.toString() || "KAKOBUY"
+        formData.get("footer_text")?.toString() ||
+        "KAKOBUY"
 
       const qr =
         formData.get("qr") ||
@@ -141,30 +136,26 @@ export async function PUT(request: Request) {
       if (!id) {
         return Response.json(
           {
-            error:
-              "Missing payment method",
+            success: false,
+            error: "Missing payment method",
           },
           { status: 400 }
         )
       }
 
-      let qrImageUrl:
-        | string
-        | null = null
+      let qrImageUrl: string | null = null
 
-      if (
-        qr instanceof File &&
-        qr.size > 0
-      ) {
-        if (
-          ![
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-          ].includes(qr.type)
-        ) {
+      if (qr instanceof File && qr.size > 0) {
+        const allowedTypes = [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+        ]
+
+        if (!allowedTypes.includes(qr.type)) {
           return Response.json(
             {
+              success: false,
               error:
                 "QR file must be JPG, PNG, or WEBP.",
             },
@@ -172,12 +163,10 @@ export async function PUT(request: Request) {
           )
         }
 
-        if (
-          qr.size >
-          5 * 1024 * 1024
-        ) {
+        if (qr.size > 5 * 1024 * 1024) {
           return Response.json(
             {
+              success: false,
               error:
                 "QR image must be smaller than 5 MB.",
             },
@@ -185,10 +174,9 @@ export async function PUT(request: Request) {
           )
         }
 
-        const buffer =
-          Buffer.from(
-            await qr.arrayBuffer()
-          )
+        const buffer = Buffer.from(
+          await qr.arrayBuffer()
+        )
 
         qrImageUrl =
           `data:${qr.type};base64,` +
@@ -222,50 +210,43 @@ export async function PUT(request: Request) {
 
       return Response.json({
         success: true,
-        wallet_address:
-          walletAddress,
-        qr_image_url:
-          qrImageUrl,
-        hero_heading:
-          heroHeading,
-        hero_subtitle:
-          heroSubtitle,
-        footer_text:
-          footerText,
       })
     }
 
-    const body =
-      await request.json()
+    // ========================================================
+    // JSON
+    // ========================================================
 
-    const id = body.id
+    const body = await request.json()
+
+    const id = body?.id
 
     const information =
-      body.information || ""
+      body?.information || ""
 
     const walletAddress =
-      body.wallet_address || ""
+      body?.wallet_address || ""
 
     const heroHeading =
-      body.hero_heading ||
+      body?.hero_heading ||
       "PAY WITH CRYPTO"
 
     const heroSubtitle =
-      body.hero_subtitle ||
+      body?.hero_subtitle ||
       "Secure and simple crypto payment"
 
     const footerText =
-      body.footer_text ||
+      body?.footer_text ||
       "KAKOBUY"
 
     const qrImageUrl =
-      body.qr_image_url || ""
+      body?.qr_image_url || ""
 
     if (!id) {
       return Response.json(
         {
-          error:
-            "Missing payment method",
+          success: false,
+          error: "Missing payment method",
         },
         { status: 400 }
       )
@@ -285,16 +266,6 @@ export async function PUT(request: Request) {
 
     return Response.json({
       success: true,
-      wallet_address:
-        walletAddress,
-      qr_image_url:
-        qrImageUrl,
-      hero_heading:
-        heroHeading,
-      hero_subtitle:
-        heroSubtitle,
-      footer_text:
-        footerText,
     })
   } catch (error) {
     console.error(
@@ -304,6 +275,7 @@ export async function PUT(request: Request) {
 
     return Response.json(
       {
+        success: false,
         error:
           error instanceof Error
             ? error.message
