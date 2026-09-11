@@ -1,28 +1,48 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+} from "react"
 
 const METHODS = [
-  { id: "bitcoin", name: "Bitcoin", symbol: "₿" },
-  { id: "ethereum", name: "Ethereum", symbol: "Ξ" },
-  { id: "tron", name: "TRON", symbol: "TRX" },
-  { id: "binance", name: "Binance", symbol: "BNB" },
+  {
+    id: "bitcoin",
+    name: "Bitcoin",
+    symbol: "₿",
+  },
+  {
+    id: "ethereum",
+    name: "Ethereum",
+    symbol: "Ξ",
+  },
+  {
+    id: "tron",
+    name: "TRON",
+    symbol: "TRX",
+  },
+  {
+    id: "binance",
+    name: "Binance",
+    symbol: "BNB",
+  },
 ]
 
 type WaitingOrder = {
-  id: number | string
+  id: number
   full_name: string
   email: string
+  phone?: string
   total: number | string
-  payment_method: string
   payment_status: string
-  wallet_copied: boolean
-  wallet_copied_at?: string | null
-  transaction_image?: string | null
-  transaction_submitted: boolean
-  transaction_submitted_at?: string | null
+  payment_method?: string
+  transaction_image?: string
+  transaction_submitted?: boolean
+  transaction_submitted_at?: string
+  wallet_copied?: boolean
+  wallet_copied_at?: string
   created_at?: string
-  updated_at?: string
 }
 
 type PaymentMethod = {
@@ -30,296 +50,355 @@ type PaymentMethod = {
   name: string
   information: string
   wallet_address: string
-  qr_image_url?: string | null
-  hero_heading?: string
-  hero_subtitle?: string
-  footer_text?: string
+  qr_image_url: string
+  hero_heading: string
+  hero_subtitle: string
+  footer_text: string
 }
 
 export default function AdminPage() {
-  const [checkingAuth, setCheckingAuth] = useState(true)
   const [authorized, setAuthorized] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
 
   const [selectedMethod, setSelectedMethod] =
     useState("bitcoin")
 
-  const [information, setInformation] = useState("")
-  const [walletAddress, setWalletAddress] = useState("")
-  const [heroHeading, setHeroHeading] =
-    useState("PAY WITH CRYPTO")
-  const [heroSubtitle, setHeroSubtitle] =
-    useState("Secure and simple crypto payment")
-  const [footerText, setFooterText] =
-    useState("KAKOBUY")
-
-  const [qrPreview, setQrPreview] = useState("")
-  const [qrFile, setQrFile] =
-    useState<File | null>(null)
-
-  const [loadingSettings, setLoadingSettings] =
-    useState(false)
-  const [savingSettings, setSavingSettings] =
-    useState(false)
-  const [settingsMessage, setSettingsMessage] =
-    useState("")
+  const [methods, setMethods] =
+    useState<Record<string, PaymentMethod>>({})
 
   const [waitingOrders, setWaitingOrders] =
     useState<WaitingOrder[]>([])
+
   const [loadingOrders, setLoadingOrders] =
     useState(false)
 
-  const [selectedOrder, setSelectedOrder] =
-    useState<WaitingOrder | null>(null)
-
-  const [changingStatus, setChangingStatus] =
+  const [savingMethod, setSavingMethod] =
     useState(false)
-  const [statusMessage, setStatusMessage] =
+
+  const [message, setMessage] =
     useState("")
 
-  /*
-   * VERIFY ADMIN LOGIN
-   */
-  useEffect(() => {
-    let active = true
+  const [qrFile, setQrFile] =
+    useState<File | null>(null)
 
+  /* =========================
+     GLOBAL LOGO
+  ========================= */
+
+  const [logoPreview, setLogoPreview] =
+    useState("")
+
+  const [logoFile, setLogoFile] =
+    useState<File | null>(null)
+
+  const [loadingLogo, setLoadingLogo] =
+    useState(false)
+
+  const [savingLogo, setSavingLogo] =
+    useState(false)
+
+  const [logoMessage, setLogoMessage] =
+    useState("")
+
+  /* =========================
+     AUTH
+  ========================= */
+
+  useEffect(() => {
     async function checkAdmin() {
       try {
-        const response = await fetch(
-          "/api/admin-check",
-          {
+        const response =
+          await fetch("/api/admin-check", {
             cache: "no-store",
-          }
-        )
+          })
 
         if (!response.ok) {
-          window.location.replace(
-            "/admin/login"
-          )
+          setAuthorized(false)
+          setCheckingAuth(false)
           return
         }
 
         const data = await response.json()
 
-        if (!data?.authenticated) {
-          window.location.replace(
-            "/admin/login"
-          )
+        if (!data.authenticated) {
+          setAuthorized(false)
+          setCheckingAuth(false)
           return
         }
 
-        if (active) {
-          setAuthorized(true)
-        }
-      } catch {
-        window.location.replace(
-          "/admin/login"
+        setAuthorized(true)
+
+        // Load the shared Kakobuy logo
+        await loadLogo()
+
+        setCheckingAuth(false)
+      } catch (error) {
+        console.error(
+          "Authentication check failed:",
+          error
         )
-      } finally {
-        if (active) {
-          setCheckingAuth(false)
-        }
+
+        setAuthorized(false)
+        setCheckingAuth(false)
       }
     }
 
     checkAdmin()
-
-    return () => {
-      active = false
-    }
   }, [])
 
-  /*
-   * LOAD PAYMENT METHOD SETTINGS
-   */
-  async function loadPaymentMethod(
-    methodId: string
-  ) {
-    setLoadingSettings(true)
-    setSettingsMessage("")
+  /* =========================
+     LOAD GLOBAL LOGO
+  ========================= */
 
+  async function loadLogo() {
     try {
-      const response = await fetch(
-        `/api/payment-methods?id=${encodeURIComponent(
-          methodId
-        )}`,
-        {
+      setLoadingLogo(true)
+
+      const response =
+        await fetch("/api/site-settings", {
           cache: "no-store",
-        }
-      )
+        })
 
       const data = await response.json()
 
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data?.error ||
-            "Unable to load payment settings."
-        )
+      if (data.success) {
+        setLogoPreview(data.logo_url || "")
       }
-
-      const method: PaymentMethod =
-        data.paymentMethod
-
-      setInformation(
-        method.information || ""
-      )
-
-      setWalletAddress(
-        method.wallet_address || ""
-      )
-
-      setHeroHeading(
-        method.hero_heading ||
-          "PAY WITH CRYPTO"
-      )
-
-      setHeroSubtitle(
-        method.hero_subtitle ||
-          "Secure and simple crypto payment"
-      )
-
-      setFooterText(
-        method.footer_text ||
-          "KAKOBUY"
-      )
-
-      setQrPreview(
-        method.qr_image_url || ""
-      )
-
-      setQrFile(null)
-    } catch (error) {
-      setSettingsMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to load settings."
-      )
-    } finally {
-      setLoadingSettings(false)
-    }
-  }
-
-  /*
-   * LOAD PAYMENT SUBMISSIONS
-   */
-  async function loadWaitingOrders() {
-    if (!authorized) return
-
-    setLoadingOrders(true)
-
-    try {
-      const response = await fetch(
-        "/api/payment-status",
-        {
-          cache: "no-store",
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data?.error ||
-            "Unable to load payment submissions."
-        )
-      }
-
-      setWaitingOrders(
-        Array.isArray(data.orders)
-          ? data.orders
-          : []
-      )
     } catch (error) {
       console.error(
-        "Unable to load payment submissions:",
+        "Unable to load logo:",
         error
       )
     } finally {
-      setLoadingOrders(false)
+      setLoadingLogo(false)
     }
   }
 
-  /*
-   * LOAD SELECTED COIN SETTINGS
-   */
-  useEffect(() => {
-    if (!authorized) return
+  /* =========================
+     LOGO FILE CHANGE
+  ========================= */
 
-    loadPaymentMethod(selectedMethod)
-  }, [selectedMethod, authorized])
-
-  /*
-   * AUTO REFRESH SUBMISSIONS
-   */
-  useEffect(() => {
-    if (!authorized) return
-
-    loadWaitingOrders()
-
-    const interval = setInterval(
-      loadWaitingOrders,
-      3000
-    )
-
-    return () => clearInterval(interval)
-  }, [authorized])
-
-  /*
-   * QR IMAGE
-   */
-  function handleQrChange(
-    event: React.ChangeEvent<HTMLInputElement>
+  function handleLogoChange(
+    event: ChangeEvent<HTMLInputElement>
   ) {
     const file = event.target.files?.[0]
 
     if (!file) return
 
-    const allowed = [
+    const allowedTypes = [
       "image/jpeg",
       "image/png",
       "image/webp",
     ]
 
-    if (!allowed.includes(file.type)) {
-      setSettingsMessage(
-        "QR code must be JPG, PNG, or WEBP."
+    if (!allowedTypes.includes(file.type)) {
+      setLogoMessage(
+        "Logo must be JPG, PNG, or WEBP."
       )
-
-      event.target.value = ""
       return
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setSettingsMessage(
-        "QR code must be smaller than 5MB."
+      setLogoMessage(
+        "Logo must be smaller than 5MB."
+      )
+      return
+    }
+
+    setLogoFile(file)
+    setLogoMessage("")
+
+    const previewUrl =
+      URL.createObjectURL(file)
+
+    setLogoPreview(previewUrl)
+  }
+
+  /* =========================
+     SAVE GLOBAL LOGO
+  ========================= */
+
+  async function saveLogo() {
+    if (!logoFile) {
+      setLogoMessage(
+        "Please select a new logo first."
+      )
+      return
+    }
+
+    try {
+      setSavingLogo(true)
+      setLogoMessage("")
+
+      const formData = new FormData()
+
+      formData.append("logo", logoFile)
+
+      const response =
+        await fetch("/api/site-settings", {
+          method: "PUT",
+          body: formData,
+        })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || "Unable to save logo."
+        )
+      }
+
+      setLogoPreview(data.logo_url || "")
+      setLogoFile(null)
+
+      setLogoMessage(
+        "Kakobuy logo saved successfully."
+      )
+    } catch (error) {
+      console.error(
+        "Save logo error:",
+        error
       )
 
-      event.target.value = ""
+      setLogoMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to save logo."
+      )
+    } finally {
+      setSavingLogo(false)
+    }
+  }
+
+  /* =========================
+     LOAD PAYMENT SETTINGS
+  ========================= */
+
+  async function loadPaymentMethod(
+    methodId: string
+  ) {
+    try {
+      const response =
+        await fetch(
+          `/api/payment-methods?id=${encodeURIComponent(
+            methodId
+          )}`,
+          {
+            cache: "no-store",
+          }
+        )
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "Unable to load payment settings."
+        )
+      }
+
+      const paymentMethod =
+        data.method || data.paymentMethod
+
+      if (paymentMethod) {
+        setMethods((previous) => ({
+          ...previous,
+          [methodId]: paymentMethod,
+        }))
+      }
+    } catch (error) {
+      console.error(
+        "Load payment method error:",
+        error
+      )
+    }
+  }
+
+  useEffect(() => {
+    if (!authorized) return
+
+    METHODS.forEach((method) => {
+      loadPaymentMethod(method.id)
+    })
+  }, [authorized])
+
+  /* =========================
+     CURRENT METHOD
+  ========================= */
+
+  const currentMethod =
+    methods[selectedMethod] || {
+      id: selectedMethod,
+      name:
+        METHODS.find(
+          (method) =>
+            method.id === selectedMethod
+        )?.name || selectedMethod,
+      information: "",
+      wallet_address: "",
+      qr_image_url: "",
+      hero_heading: "",
+      hero_subtitle: "",
+      footer_text: "",
+    }
+
+  function updateCurrentMethod(
+    field: keyof PaymentMethod,
+    value: string
+  ) {
+    setMethods((previous) => ({
+      ...previous,
+      [selectedMethod]: {
+        ...currentMethod,
+        [field]: value,
+      },
+    }))
+  }
+
+  /* =========================
+     QR CHANGE
+  ========================= */
+
+  function handleQrChange(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ]
+
+    if (!allowedTypes.includes(file.type)) {
+      setMessage(
+        "QR code must be JPG, PNG, or WEBP."
+      )
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage(
+        "QR code must be smaller than 5MB."
+      )
       return
     }
 
     setQrFile(file)
-
-    const reader = new FileReader()
-
-    reader.onload = () => {
-      if (
-        typeof reader.result === "string"
-      ) {
-        setQrPreview(reader.result)
-      }
-    }
-
-    reader.readAsDataURL(file)
+    setMessage("")
   }
 
-  /*
-   * SAVE COIN SETTINGS
-   */
-  async function saveSettings() {
-    setSavingSettings(true)
-    setSettingsMessage("")
+  /* =========================
+     SAVE PAYMENT SETTINGS
+  ========================= */
 
+  async function savePaymentMethod() {
     try {
+      setSavingMethod(true)
+      setMessage("")
+
       const formData = new FormData()
 
       formData.append(
@@ -329,27 +408,27 @@ export default function AdminPage() {
 
       formData.append(
         "information",
-        information
+        currentMethod.information || ""
       )
 
       formData.append(
         "wallet_address",
-        walletAddress
+        currentMethod.wallet_address || ""
       )
 
       formData.append(
         "hero_heading",
-        heroHeading
+        currentMethod.hero_heading || ""
       )
 
       formData.append(
         "hero_subtitle",
-        heroSubtitle
+        currentMethod.hero_subtitle || ""
       )
 
       formData.append(
         "footer_text",
-        footerText
+        currentMethod.footer_text || ""
       )
 
       if (qrFile) {
@@ -359,285 +438,255 @@ export default function AdminPage() {
         )
       }
 
-      const response = await fetch(
-        "/api/payment-methods",
-        {
+      const response =
+        await fetch("/api/payment-methods", {
           method: "PUT",
           body: formData,
-        }
-      )
+        })
 
       const data = await response.json()
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data?.error ||
-            "Unable to save payment settings."
-        )
-      }
-
-      if (
-        data.paymentMethod?.qr_image_url
-      ) {
-        setQrPreview(
-          data.paymentMethod.qr_image_url
+          data.error ||
+            "Unable to save changes."
         )
       }
 
       setQrFile(null)
 
-      setSettingsMessage(
-        "Payment settings saved successfully."
-      )
-
       await loadPaymentMethod(
         selectedMethod
       )
+
+      setMessage(
+        `${currentMethod.name} settings saved successfully.`
+      )
     } catch (error) {
-      setSettingsMessage(
+      console.error(
+        "Save payment method error:",
+        error
+      )
+
+      setMessage(
         error instanceof Error
           ? error.message
-          : "Unable to save settings."
+          : "Unable to save changes."
       )
     } finally {
-      setSavingSettings(false)
+      setSavingMethod(false)
     }
   }
 
-  /*
-   * CHANGE CUSTOMER PAYMENT STATUS
-   */
-  async function changeOrderStatus(
+  /* =========================
+     LOAD WAITING ORDERS
+  ========================= */
+
+  async function loadWaitingOrders() {
+    try {
+      setLoadingOrders(true)
+
+      const response =
+        await fetch("/api/payment-status", {
+          cache: "no-store",
+        })
+
+      if (!response.ok) return
+
+      const data = await response.json()
+
+      if (data.success) {
+        setWaitingOrders(
+          data.orders || []
+        )
+      }
+    } catch (error) {
+      console.error(
+        "Load waiting orders error:",
+        error
+      )
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!authorized) return
+
+    loadWaitingOrders()
+
+    const interval =
+      setInterval(
+        loadWaitingOrders,
+        3000
+      )
+
+    return () =>
+      clearInterval(interval)
+  }, [authorized])
+
+  /* =========================
+     UPDATE ORDER STATUS
+  ========================= */
+
+  async function updateOrderStatus(
+    orderId: number,
     status:
       | "pending"
       | "confirmed"
       | "failed"
   ) {
-    if (!selectedOrder) return
-
-    setChangingStatus(true)
-    setStatusMessage("")
-
     try {
-      const response = await fetch(
-        "/api/payment-status",
-        {
+      const response =
+        await fetch("/api/payment-status", {
           method: "PUT",
           headers: {
             "Content-Type":
               "application/json",
           },
           body: JSON.stringify({
-            orderId: selectedOrder.id,
+            orderId,
             status,
           }),
-        }
-      )
+        })
 
       const data = await response.json()
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data?.error ||
+          data.error ||
             "Unable to update payment status."
         )
       }
 
-      const updatedOrder =
-        data.order || {
-          ...selectedOrder,
-          payment_status: status,
-        }
-
-      setSelectedOrder(
-        updatedOrder
-      )
-
-      setWaitingOrders((current) =>
-        current.map((order) =>
-          String(order.id) ===
-          String(selectedOrder.id)
-            ? {
-                ...order,
-                payment_status: status,
-              }
-            : order
-        )
-      )
-
-      setStatusMessage(
-        `Payment status changed to ${status.toUpperCase()}.`
-      )
+      await loadWaitingOrders()
     } catch (error) {
-      setStatusMessage(
+      console.error(
+        "Update status error:",
+        error
+      )
+
+      alert(
         error instanceof Error
           ? error.message
-          : "Unable to change status."
+          : "Unable to update payment status."
       )
-    } finally {
-      setChangingStatus(false)
     }
   }
 
-  /*
-   * LOG OUT
-   */
-  function logout() {
-    document.cookie =
-      "kakobuy_admin=; Max-Age=0; path=/"
+  /* =========================
+     LOGOUT
+  ========================= */
 
-    window.location.replace(
-      "/admin/login"
-    )
-  }
-
-  function statusLabel(
-    status?: string
-  ) {
-    const value =
-      (status || "pending").toLowerCase()
-
-    if (value === "confirmed") {
-      return "CONFIRMED"
-    }
-
-    if (value === "failed") {
-      return "FAILED"
-    }
-
-    return "PENDING"
-  }
-
-  function statusClass(
-    status?: string
-  ) {
-    const value =
-      (status || "pending").toLowerCase()
-
-    if (value === "confirmed") {
-      return "confirmed"
-    }
-
-    if (value === "failed") {
-      return "failed"
-    }
-
-    return "pending"
-  }
-
-  function formatDate(
-    value?: string | null
-  ) {
-    if (!value) return "Not available"
-
+  async function logout() {
     try {
-      return new Date(
-        value
-      ).toLocaleString()
+      await fetch(
+        "/api/admin-logout",
+        {
+          method: "POST",
+        }
+      )
     } catch {
-      return value
+      // Continue with redirect
     }
+
+    window.location.href = "/"
   }
 
-  /*
-   * AUTH LOADING
-   */
+  /* =========================
+     LOADING SCREEN
+  ========================= */
+
   if (checkingAuth) {
     return (
-      <main className="auth-loading">
-        <div className="auth-glow" />
+      <main className="loading-screen">
+        <div className="loading-glow" />
 
-        <div className="auth-card">
-          <div className="auth-logo">
+        {logoPreview ? (
+          <img
+            src={logoPreview}
+            alt="Kakobuy"
+            className="loading-logo"
+          />
+        ) : (
+          <div className="loading-brand">
             KAKO<span>BUY</span>
           </div>
+        )}
 
-          <div className="loader" />
+        <div className="loading-spinner" />
 
-          <p>
-            VERIFYING ADMIN ACCESS...
-          </p>
-        </div>
+        <p>Checking administrator access...</p>
 
         <style jsx>{`
-          .auth-loading {
+          .loading-screen {
             min-height: 100vh;
-            background: #070707;
-            color: #fff;
-            display: grid;
-            place-items: center;
-            padding: 20px;
+            background:
+              radial-gradient(
+                circle at 50% 40%,
+                rgba(255, 0, 0, 0.18),
+                transparent 35%
+              ),
+              #050505;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             position: relative;
             overflow: hidden;
-            font-family:
-              Inter,
-              system-ui,
-              sans-serif;
           }
 
-          .auth-glow {
-            position: fixed;
-            width: 300px;
-            height: 300px;
-            border-radius: 50%;
-            background: rgba(
-              255,
-              35,
-              35,
-              0.12
-            );
+          .loading-glow {
+            position: absolute;
+            width: 280px;
+            height: 280px;
+            background: rgba(255, 0, 0, 0.12);
             filter: blur(80px);
-            animation: authPulse 2s infinite;
-          }
-
-          .auth-card {
-            position: relative;
-            z-index: 1;
-            text-align: center;
-            padding: 35px;
-            border: 1px solid #252525;
-            border-radius: 18px;
-            background: rgba(
-              15,
-              15,
-              15,
-              0.94
-            );
-            box-shadow:
-              0 0 60px
-              rgba(
-                255,
-                30,
-                30,
-                0.1
-              );
-          }
-
-          .auth-logo {
-            font-size: 27px;
-            font-weight: 950;
-            margin-bottom: 22px;
-          }
-
-          .auth-logo span {
-            color: #ff3030;
-          }
-
-          .auth-card p {
-            color: #666;
-            font-size: 9px;
-            font-weight: 900;
-            letter-spacing: 0.14em;
-          }
-
-          .loader {
-            width: 28px;
-            height: 28px;
-            margin: 0 auto;
             border-radius: 50%;
-            border: 3px solid #242424;
-            border-top-color: #ff3030;
+            animation: pulse 2s infinite;
+          }
+
+          .loading-logo {
+            width: 130px;
+            height: 130px;
+            object-fit: contain;
+            border-radius: 24px;
+            position: relative;
+            z-index: 2;
+            animation: logoFloat 2s ease-in-out infinite;
+          }
+
+          .loading-brand {
+            font-size: 42px;
+            font-weight: 900;
+            letter-spacing: -3px;
+            position: relative;
+            z-index: 2;
+          }
+
+          .loading-brand span {
+            color: #ff2020;
+          }
+
+          .loading-spinner {
+            width: 34px;
+            height: 34px;
+            border: 3px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #ff2020;
+            border-radius: 50%;
+            margin-top: 28px;
             animation: spin 0.8s linear infinite;
+            position: relative;
+            z-index: 2;
+          }
+
+          p {
+            color: #999;
+            margin-top: 14px;
+            font-size: 13px;
+            position: relative;
+            z-index: 2;
           }
 
           @keyframes spin {
@@ -646,16 +695,16 @@ export default function AdminPage() {
             }
           }
 
-          @keyframes authPulse {
-            0%,
-            100% {
-              opacity: 0.5;
-              transform: scale(0.9);
-            }
-
+          @keyframes pulse {
             50% {
-              opacity: 1;
-              transform: scale(1.1);
+              transform: scale(1.2);
+              opacity: 0.6;
+            }
+          }
+
+          @keyframes logoFloat {
+            50% {
+              transform: translateY(-7px);
             }
           }
         `}</style>
@@ -664,23 +713,125 @@ export default function AdminPage() {
   }
 
   if (!authorized) {
-    return null
+    return (
+      <main className="unauthorized">
+        <div className="unauthorized-card">
+          <div className="unauthorized-brand">
+            {logoPreview ? (
+              <img
+                src={logoPreview}
+                alt="Kakobuy"
+              />
+            ) : (
+              <>
+                KAKO<span>BUY</span>
+              </>
+            )}
+          </div>
+
+          <h1>Administrator Access</h1>
+
+          <p>
+            You are not authorized to view
+            this page.
+          </p>
+
+          <button
+            onClick={() =>
+              (window.location.href = "/")
+            }
+          >
+            Go Back
+          </button>
+        </div>
+
+        <style jsx>{`
+          .unauthorized {
+            min-height: 100vh;
+            background: #050505;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+          }
+
+          .unauthorized-card {
+            width: 100%;
+            max-width: 420px;
+            background: #111;
+            border: 1px solid #292929;
+            border-radius: 24px;
+            padding: 35px;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(255, 0, 0, 0.1);
+          }
+
+          .unauthorized-brand {
+            margin-bottom: 25px;
+            font-size: 30px;
+            font-weight: 900;
+          }
+
+          .unauthorized-brand img {
+            width: 90px;
+            height: 90px;
+            object-fit: contain;
+          }
+
+          .unauthorized-brand span {
+            color: #ff2020;
+          }
+
+          h1 {
+            margin: 0 0 10px;
+          }
+
+          p {
+            color: #999;
+          }
+
+          button {
+            margin-top: 20px;
+            border: 0;
+            border-radius: 12px;
+            padding: 13px 20px;
+            background: #ff2020;
+            color: white;
+            font-weight: 800;
+            cursor: pointer;
+          }
+        `}</style>
+      </main>
+    )
   }
 
   return (
-    <main className="admin-page">
-      <div className="glow glow-one" />
-      <div className="glow glow-two" />
+    <main className="page">
+      <div className="background-orb orb-one" />
+      <div className="background-orb orb-two" />
+
+      {/* =========================
+          TOP BAR
+      ========================= */}
 
       <header className="topbar">
-        <div>
-          <div className="brand">
-            <span>KAKO</span>BUY
-          </div>
+        <div className="brand">
+          {logoPreview ? (
+            <img
+              src={logoPreview}
+              alt="Kakobuy"
+              className="brand-logo"
+            />
+          ) : (
+            <div className="brand-text">
+              KAKO<span>BUY</span>
+            </div>
+          )}
 
-          <p className="admin-label">
-            PAYMENT ADMIN DASHBOARD
-          </p>
+          <div className="admin-label">
+            ADMIN
+          </div>
         </div>
 
         <div className="top-actions">
@@ -700,1094 +851,781 @@ export default function AdminPage() {
             PAGE 3
           </a>
 
-          <button
-            onClick={loadWaitingOrders}
-            className="refresh-button"
-          >
-            ↻ REFRESH
-          </button>
-
-          <button
-            onClick={logout}
-            className="logout-button"
-          >
-            LOG OUT
+          <button onClick={logout}>
+            LOGOUT
           </button>
         </div>
       </header>
 
-      <section className="dashboard-heading">
-        <div>
-          <p className="eyebrow">
-            KAKOBUY CONTROL CENTER
-          </p>
+      <div className="container">
+        {/* =========================
+            GLOBAL BRAND CONTROL
+        ========================= */}
 
-          <h1>
-            Payment
-            <span> Dashboard</span>
-          </h1>
-
-          <p className="heading-text">
-            Manage crypto payment settings and
-            manually confirm customer payments.
-          </p>
-        </div>
-
-        <div className="live-badge">
-          <span />
-          LIVE
-        </div>
-      </section>
-
-      <section className="submission-section">
-        <div className="section-title-row">
-          <div>
-            <p className="eyebrow">
-              CUSTOMER PAYMENTS
-            </p>
-
-            <h2>
-              Payment submissions
-            </h2>
-          </div>
-
-          <div className="submission-count">
-            {waitingOrders.length} SUBMITTED
-          </div>
-        </div>
-
-        {loadingOrders &&
-        waitingOrders.length === 0 ? (
-          <div className="empty-card">
-            Loading payment submissions...
-          </div>
-        ) : waitingOrders.length === 0 ? (
-          <div className="empty-card">
-            <div className="empty-icon">
-              ✓
-            </div>
-
-            <strong>
-              No pending submissions
-            </strong>
-
-            <p>
-              When a buyer uploads a screenshot
-              and confirms the payment, the
-              submission will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="orders-grid">
-            {waitingOrders.map((order) => (
-              <button
-                key={String(order.id)}
-                className="order-card"
-                onClick={() =>
-                  setSelectedOrder(order)
-                }
-              >
-                <div className="order-card-top">
-                  <span className="order-id">
-                    #{order.id}
-                  </span>
-
-                  <span
-                    className={`status ${statusClass(
-                      order.payment_status
-                    )}`}
-                  >
-                    {statusLabel(
-                      order.payment_status
-                    )}
-                  </span>
-                </div>
-
-                <h3>
-                  {order.full_name ||
-                    "Customer"}
-                </h3>
-
-                <p className="customer-email">
-                  {order.email ||
-                    "No email"}
-                </p>
-
-                <div className="order-info">
-                  <div>
-                    <span>
-                      AMOUNT
-                    </span>
-
-                    <strong>
-                      {order.total}
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      METHOD
-                    </span>
-
-                    <strong>
-                      {(
-                        order.payment_method ||
-                        "Not selected"
-                      ).toUpperCase()}
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="submitted">
-                  Submitted{" "}
-                  {formatDate(
-                    order.transaction_submitted_at
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {selectedOrder && (
-        <div
-          className="modal-backdrop"
-          onClick={() =>
-            setSelectedOrder(null)
-          }
-        >
-          <div
-            className="order-modal"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-            <button
-              className="close-button"
-              onClick={() =>
-                setSelectedOrder(null)
-              }
-            >
-              ×
-            </button>
-
-            <p className="eyebrow">
-              PAYMENT REVIEW
-            </p>
-
-            <h2>
-              Order #{selectedOrder.id}
-            </h2>
-
-            <div className="review-status">
-              <span
-                className={`status large ${statusClass(
-                  selectedOrder.payment_status
-                )}`}
-              >
-                {statusLabel(
-                  selectedOrder.payment_status
-                )}
+        <section className="card brand-card">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">
+                GLOBAL BRAND CONTROL
               </span>
-            </div>
 
-            <div className="customer-box">
-              <div>
-                <span>CUSTOMER</span>
-                <strong>
-                  {selectedOrder.full_name ||
-                    "Not available"}
-                </strong>
-              </div>
-
-              <div>
-                <span>EMAIL</span>
-                <strong>
-                  {selectedOrder.email ||
-                    "Not available"}
-                </strong>
-              </div>
-
-              <div>
-                <span>AMOUNT</span>
-                <strong>
-                  {selectedOrder.total}
-                </strong>
-              </div>
-
-              <div>
-                <span>
-                  PAYMENT METHOD
-                </span>
-                <strong>
-                  {(
-                    selectedOrder.payment_method ||
-                    "Not selected"
-                  ).toUpperCase()}
-                </strong>
-              </div>
-            </div>
-
-            <div className="screenshot-box">
-              <div className="box-heading">
-                <div>
-                  <p>
-                    TRANSACTION SCREENSHOT
-                  </p>
-
-                  <span>
-                    Uploaded by the buyer
-                  </span>
-                </div>
-              </div>
-
-              {selectedOrder.transaction_image ? (
-                <a
-                  href={
-                    selectedOrder.transaction_image
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  className="image-link"
-                >
-                  <img
-                    src={
-                      selectedOrder.transaction_image
-                    }
-                    alt="Buyer transaction screenshot"
-                  />
-
-                  <span>
-                    OPEN FULL IMAGE
-                  </span>
-                </a>
-              ) : (
-                <div className="no-image">
-                  No transaction screenshot
-                  available.
-                </div>
-              )}
-            </div>
-
-            <div className="review-details">
-              <div>
-                <span>
-                  WALLET COPIED
-                </span>
-
-                <strong>
-                  {selectedOrder.wallet_copied
-                    ? "YES"
-                    : "NO"}
-                </strong>
-              </div>
-
-              <div>
-                <span>
-                  SUBMITTED
-                </span>
-
-                <strong>
-                  {formatDate(
-                    selectedOrder.transaction_submitted_at
-                  )}
-                </strong>
-              </div>
-            </div>
-
-            <div className="status-control">
-              <p className="eyebrow">
-                ADMIN STATUS CONTROL
-              </p>
-
-              <h3>
-                Choose the payment result
-              </h3>
+              <h1>Kakobuy Logo</h1>
 
               <p>
-                The buyer cannot change this
-                status. Only the administrator
-                can change it.
+                Change the logo used across
+                the Kakobuy pages.
               </p>
+            </div>
+          </div>
 
-              <div className="status-buttons">
-                <button
-                  disabled={changingStatus}
-                  className="pending-button"
-                  onClick={() =>
-                    changeOrderStatus(
-                      "pending"
-                    )
-                  }
-                >
-                  PENDING
-                </button>
-
-                <button
-                  disabled={changingStatus}
-                  className="confirmed-button"
-                  onClick={() =>
-                    changeOrderStatus(
-                      "confirmed"
-                    )
-                  }
-                >
-                  CONFIRMED
-                </button>
-
-                <button
-                  disabled={changingStatus}
-                  className="failed-button"
-                  onClick={() =>
-                    changeOrderStatus(
-                      "failed"
-                    )
-                  }
-                >
-                  FAILED
-                </button>
-              </div>
-
-              {statusMessage && (
-                <div className="success-message">
-                  {statusMessage}
+          <div className="logo-editor">
+            <div className="logo-preview-box">
+              {loadingLogo ? (
+                <div className="preview-loading">
+                  Loading...
+                </div>
+              ) : logoPreview ? (
+                <img
+                  src={logoPreview}
+                  alt="Kakobuy logo preview"
+                  className="logo-preview"
+                />
+              ) : (
+                <div className="preview-placeholder">
+                  KAKO<span>BUY</span>
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
 
-      <section className="settings-section">
-        <div className="section-title-row">
-          <div>
-            <p className="eyebrow">
-              PAGE 3 CONTROL
-            </p>
-
-            <h2>
-              Crypto payment settings
-            </h2>
-          </div>
-        </div>
-
-        <div className="method-tabs">
-          {METHODS.map((method) => (
-            <button
-              key={method.id}
-              onClick={() =>
-                setSelectedMethod(
-                  method.id
-                )
-              }
-              className={
-                selectedMethod ===
-                method.id
-                  ? "method-tab active"
-                  : "method-tab"
-              }
-            >
-              <strong>
-                {method.symbol}
-              </strong>
-
-              <span>
-                {method.name}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="settings-card">
-          {loadingSettings ? (
-            <div className="loading-settings">
-              Loading payment settings...
-            </div>
-          ) : (
-            <>
-              <div className="selected-method">
-                <span>
-                  SELECTED PAYMENT METHOD
-                </span>
-
-                <strong>
-                  {METHODS.find(
-                    (method) =>
-                      method.id ===
-                      selectedMethod
-                  )?.name ||
-                    selectedMethod}
-                </strong>
-              </div>
-
-              <div className="form-grid">
-                <div className="field full">
-                  <label>
-                    HERO HEADING
-                  </label>
-
-                  <input
-                    value={heroHeading}
-                    onChange={(event) =>
-                      setHeroHeading(
-                        event.target.value
-                      )
-                    }
-                    placeholder="PAY WITH CRYPTO"
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>
-                    HERO SUBTITLE
-                  </label>
-
-                  <input
-                    value={heroSubtitle}
-                    onChange={(event) =>
-                      setHeroSubtitle(
-                        event.target.value
-                      )
-                    }
-                    placeholder="Secure and simple crypto payment"
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>
-                    PAYMENT INFORMATION
-                  </label>
-
-                  <textarea
-                    value={information}
-                    onChange={(event) =>
-                      setInformation(
-                        event.target.value
-                      )
-                    }
-                    placeholder="Send the exact amount to the wallet below."
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>
-                    WALLET ADDRESS
-                  </label>
-
-                  <textarea
-                    value={walletAddress}
-                    onChange={(event) =>
-                      setWalletAddress(
-                        event.target.value
-                      )
-                    }
-                    placeholder="Enter wallet address"
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>
-                    FOOTER TEXT
-                  </label>
-
-                  <input
-                    value={footerText}
-                    onChange={(event) =>
-                      setFooterText(
-                        event.target.value
-                      )
-                    }
-                    placeholder="KAKOBUY"
-                  />
-                </div>
-              </div>
-
-              <div className="qr-section">
-                <div>
-                  <p className="qr-title">
-                    QR CODE
-                  </p>
-
-                  <p className="qr-description">
-                    Upload a JPG, PNG, or WEBP
-                    QR image. Maximum 5MB.
-                  </p>
-                </div>
-
-                <div className="qr-content">
-                  {qrPreview ? (
-                    <div className="qr-preview">
-                      <img
-                        src={qrPreview}
-                        alt="Payment QR code"
-                      />
-                    </div>
-                  ) : (
-                    <div className="qr-empty">
-                      NO QR CODE
-                    </div>
-                  )}
-
-                  <label className="upload-qr">
-                    CHOOSE QR IMAGE
-
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={
-                        handleQrChange
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {settingsMessage && (
-                <div
-                  className={
-                    settingsMessage.includes(
-                      "successfully"
-                    )
-                      ? "settings-success"
-                      : "settings-error"
-                  }
-                >
-                  {settingsMessage}
-                </div>
-              )}
+            <div className="logo-controls">
+              <label className="file-button">
+                Choose New Logo
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleLogoChange}
+                />
+              </label>
 
               <button
                 className="save-button"
-                onClick={saveSettings}
-                disabled={savingSettings}
+                onClick={saveLogo}
+                disabled={
+                  savingLogo || !logoFile
+                }
               >
-                {savingSettings
+                {savingLogo
                   ? "SAVING..."
-                  : "SAVE PAYMENT SETTINGS"}
+                  : "SAVE LOGO"}
               </button>
-            </>
+
+              <p className="hint">
+                JPG, PNG or WEBP. Maximum
+                size: 5MB.
+              </p>
+
+              {logoMessage && (
+                <div className="success-message">
+                  {logoMessage}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* =========================
+            PAYMENT SETTINGS
+        ========================= */}
+
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">
+                PAGE 3 CONTROL
+              </span>
+
+              <h1>Payment Settings</h1>
+
+              <p>
+                Manage the information buyers
+                see for each cryptocurrency.
+              </p>
+            </div>
+          </div>
+
+          <div className="method-tabs">
+            {METHODS.map((method) => (
+              <button
+                key={method.id}
+                className={
+                  selectedMethod ===
+                  method.id
+                    ? "method-tab active"
+                    : "method-tab"
+                }
+                onClick={() => {
+                  setSelectedMethod(
+                    method.id
+                  )
+                  setQrFile(null)
+                  setMessage("")
+                }}
+              >
+                <span>
+                  {method.symbol}
+                </span>
+
+                {method.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="settings-grid">
+            <div className="field full">
+              <label>
+                Hero Heading
+              </label>
+
+              <input
+                value={
+                  currentMethod.hero_heading
+                }
+                onChange={(event) =>
+                  updateCurrentMethod(
+                    "hero_heading",
+                    event.target.value
+                  )
+                }
+                placeholder="Complete Your Payment"
+              />
+            </div>
+
+            <div className="field full">
+              <label>
+                Hero Subtitle
+              </label>
+
+              <textarea
+                value={
+                  currentMethod.hero_subtitle
+                }
+                onChange={(event) =>
+                  updateCurrentMethod(
+                    "hero_subtitle",
+                    event.target.value
+                  )
+                }
+                placeholder="Send your payment using the selected cryptocurrency."
+              />
+            </div>
+
+            <div className="field full">
+              <label>
+                Payment Information
+              </label>
+
+              <textarea
+                value={
+                  currentMethod.information
+                }
+                onChange={(event) =>
+                  updateCurrentMethod(
+                    "information",
+                    event.target.value
+                  )
+                }
+                placeholder="Payment instructions..."
+              />
+            </div>
+
+            <div className="field full">
+              <label>
+                Wallet Address
+              </label>
+
+              <textarea
+                value={
+                  currentMethod.wallet_address
+                }
+                onChange={(event) =>
+                  updateCurrentMethod(
+                    "wallet_address",
+                    event.target.value
+                  )
+                }
+                placeholder="Enter wallet address"
+              />
+            </div>
+
+            <div className="field full">
+              <label>
+                QR Code
+              </label>
+
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleQrChange}
+              />
+
+              <p className="hint">
+                JPG, PNG or WEBP. Maximum
+                size: 5MB.
+              </p>
+
+              {currentMethod.qr_image_url && (
+                <div className="qr-preview">
+                  <img
+                    src={
+                      currentMethod.qr_image_url
+                    }
+                    alt={`${currentMethod.name} QR code`}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="field full">
+              <label>
+                Footer Text
+              </label>
+
+              <textarea
+                value={
+                  currentMethod.footer_text
+                }
+                onChange={(event) =>
+                  updateCurrentMethod(
+                    "footer_text",
+                    event.target.value
+                  )
+                }
+                placeholder="Kakobuy"
+              />
+            </div>
+          </div>
+
+          {message && (
+            <div className="save-message">
+              {message}
+            </div>
           )}
-        </div>
-      </section>
 
-      <footer>
-        <strong>
-          KAKO<span>BUY</span>
-        </strong>
+          <button
+            className="main-save"
+            onClick={savePaymentMethod}
+            disabled={savingMethod}
+          >
+            {savingMethod
+              ? "SAVING..."
+              : `SAVE ${currentMethod.name.toUpperCase()} SETTINGS`}
+          </button>
+        </section>
 
-        <p>
-          PAYMENT ADMIN CONTROL CENTER
-        </p>
-      </footer>
+        {/* =========================
+            PAYMENT QUEUE
+        ========================= */}
+
+        <section className="card">
+          <div className="section-heading queue-heading">
+            <div>
+              <span className="eyebrow">
+                LIVE PAYMENT QUEUE
+              </span>
+
+              <h1>Waiting for Confirmation</h1>
+
+              <p>
+                Buyer payment submissions
+                appear here automatically.
+              </p>
+            </div>
+
+            <div className="queue-count">
+              {waitingOrders.length}
+            </div>
+          </div>
+
+          {loadingOrders &&
+          waitingOrders.length === 0 ? (
+            <div className="empty-state">
+              Loading payment submissions...
+            </div>
+          ) : waitingOrders.length === 0 ? (
+            <div className="empty-state">
+              No payment submissions waiting
+              for confirmation.
+            </div>
+          ) : (
+            <div className="orders">
+              {waitingOrders.map(
+                (order) => (
+                  <div
+                    className="order-card"
+                    key={order.id}
+                  >
+                    <div className="order-top">
+                      <div>
+                        <div className="order-id">
+                          ORDER #{order.id}
+                        </div>
+
+                        <h2>
+                          {order.full_name ||
+                            "Customer"}
+                        </h2>
+
+                        <p>
+                          {order.email}
+                        </p>
+                      </div>
+
+                      <div className="amount">
+                        $
+                        {Number(
+                          order.total || 0
+                        ).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div className="order-info">
+                      <div>
+                        <span>
+                          METHOD
+                        </span>
+
+                        <strong>
+                          {order.payment_method ||
+                            "Not selected"}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          WALLET
+                        </span>
+
+                        <strong>
+                          {order.wallet_copied
+                            ? "COPIED"
+                            : "NOT COPIED"}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          SUBMITTED
+                        </span>
+
+                        <strong>
+                          {order.transaction_submitted
+                            ? "YES"
+                            : "NO"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {order.transaction_image && (
+                      <div className="transaction-image">
+                        <img
+                          src={
+                            order.transaction_image
+                          }
+                          alt="Payment transaction"
+                        />
+
+                        <a
+                          href={
+                            order.transaction_image
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          VIEW FULL IMAGE
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="status-actions">
+                      <button
+                        className="pending"
+                        onClick={() =>
+                          updateOrderStatus(
+                            order.id,
+                            "pending"
+                          )
+                        }
+                      >
+                        PENDING
+                      </button>
+
+                      <button
+                        className="confirmed"
+                        onClick={() =>
+                          updateOrderStatus(
+                            order.id,
+                            "confirmed"
+                          )
+                        }
+                      >
+                        CONFIRMED
+                      </button>
+
+                      <button
+                        className="failed"
+                        onClick={() =>
+                          updateOrderStatus(
+                            order.id,
+                            "failed"
+                          )
+                        }
+                      >
+                        FAILED
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </section>
+
+        <footer>
+          {logoPreview ? (
+            <img
+              src={logoPreview}
+              alt="Kakobuy"
+              className="footer-logo"
+            />
+          ) : (
+            <div className="footer-brand">
+              KAKO<span>BUY</span>
+            </div>
+          )}
+
+          <p>
+            Kakobuy Administrator Panel
+          </p>
+        </footer>
+      </div>
 
       <style jsx>{`
         * {
           box-sizing: border-box;
         }
 
-        .admin-page {
+        .page {
           min-height: 100vh;
           background:
             radial-gradient(
-              circle at 10% 10%,
-              rgba(255, 30, 30, 0.13),
+              circle at 20% 10%,
+              rgba(255, 0, 0, 0.11),
               transparent 30%
             ),
             radial-gradient(
-              circle at 90% 30%,
-              rgba(255, 30, 30, 0.09),
-              transparent 28%
+              circle at 80% 40%,
+              rgba(255, 0, 0, 0.08),
+              transparent 32%
             ),
-            #070707;
-          color: #fff;
-          padding: 18px;
-          font-family:
-            Inter,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
+            #050505;
+          color: white;
+          padding-bottom: 50px;
+          overflow: hidden;
           position: relative;
-          overflow-x: hidden;
         }
 
-        .glow {
+        .background-orb {
           position: fixed;
-          width: 280px;
-          height: 280px;
           border-radius: 50%;
-          background: rgba(
-            255,
-            25,
-            25,
-            0.07
-          );
-          filter: blur(70px);
+          filter: blur(90px);
           pointer-events: none;
-          z-index: 0;
-          animation: floatGlow 7s ease-in-out
-            infinite;
+          opacity: 0.2;
         }
 
-        .glow-one {
-          top: 10%;
+        .orb-one {
+          width: 300px;
+          height: 300px;
+          background: #ff0000;
+          top: 5%;
           left: -150px;
+          animation: orbMove 8s ease-in-out infinite;
         }
 
-        .glow-two {
-          right: -150px;
-          top: 55%;
-          animation-delay: -3s;
-        }
-
-        .topbar,
-        .dashboard-heading,
-        .submission-section,
-        .settings-section,
-        footer {
-          position: relative;
-          z-index: 1;
-          max-width: 1100px;
-          margin-left: auto;
-          margin-right: auto;
+        .orb-two {
+          width: 260px;
+          height: 260px;
+          background: #ff0000;
+          right: -130px;
+          top: 45%;
+          animation: orbMove 10s ease-in-out infinite reverse;
         }
 
         .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          min-height: 72px;
+          padding: 12px 18px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 15px;
-          padding: 8px 0 25px;
-          border-bottom: 1px solid #191919;
+          background: rgba(5, 5, 5, 0.88);
+          backdrop-filter: blur(18px);
+          border-bottom: 1px solid #222;
         }
 
         .brand {
-          font-size: 27px;
-          font-weight: 950;
-          letter-spacing: -0.05em;
+          display: flex;
+          align-items: center;
+          gap: 10px;
         }
 
-        .brand span,
-        footer span {
-          color: #ff3030;
+        .brand-logo {
+          width: 44px;
+          height: 44px;
+          object-fit: contain;
+          border-radius: 10px;
+        }
+
+        .brand-text {
+          font-size: 24px;
+          font-weight: 950;
+          letter-spacing: -2px;
+        }
+
+        .brand-text span,
+        .footer-brand span {
+          color: #ff2020;
         }
 
         .admin-label {
-          margin: 3px 0 0;
-          color: #666;
-          font-size: 8px;
+          font-size: 9px;
           font-weight: 900;
-          letter-spacing: 0.15em;
+          color: #ff3030;
+          border: 1px solid rgba(255, 32, 32, 0.4);
+          padding: 4px 7px;
+          border-radius: 5px;
         }
 
         .top-actions {
           display: flex;
+          align-items: center;
           gap: 7px;
-          flex-wrap: wrap;
-          justify-content: flex-end;
         }
 
         .top-actions a,
-        .refresh-button,
-        .logout-button {
-          border: 1px solid #292929;
+        .top-actions button {
+          text-decoration: none;
+          color: #ddd;
           background: #111;
-          color: #aaa;
-          padding: 9px 11px;
-          border-radius: 9px;
+          border: 1px solid #292929;
+          border-radius: 8px;
+          padding: 9px 10px;
           font-size: 9px;
           font-weight: 900;
-          text-decoration: none;
           cursor: pointer;
         }
 
         .top-actions a:hover,
-        .refresh-button:hover,
-        .logout-button:hover {
-          color: #fff;
-          border-color: #ff3030;
+        .top-actions button:hover {
+          border-color: #ff2020;
+          color: white;
         }
 
-        .logout-button:hover {
-          background: #180808;
+        .container {
+          width: min(100% - 28px, 1050px);
+          margin: 0 auto;
+          position: relative;
+          z-index: 2;
         }
 
-        .dashboard-heading {
-          padding: 42px 0 35px;
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          align-items: flex-start;
-        }
-
-        .eyebrow {
-          color: #ff4444;
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 0.16em;
-          margin: 0 0 8px;
-        }
-
-        h1 {
-          font-size: clamp(
-            35px,
-            8vw,
-            62px
-          );
-          line-height: 0.95;
-          letter-spacing: -0.06em;
-          margin: 0;
-          animation: slideUp 0.7s ease both;
-        }
-
-        h1 span {
-          color: #ff3030;
-        }
-
-        .heading-text {
-          max-width: 550px;
-          color: #777;
-          line-height: 1.6;
-          font-size: 12px;
-          margin: 14px 0 0;
-        }
-
-        .live-badge {
-          border: 1px solid
-            rgba(255, 48, 48, 0.25);
-          background: rgba(
-            255,
-            48,
-            48,
-            0.07
-          );
-          color: #ff5555;
-          padding: 9px 12px;
-          border-radius: 99px;
-          font-size: 9px;
-          font-weight: 900;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-        }
-
-        .live-badge span {
-          width: 7px;
-          height: 7px;
-          background: #ff3030;
-          border-radius: 50%;
-          box-shadow:
-            0 0 12px #ff3030;
-          animation: pulse 1.4s infinite;
-        }
-
-        .section-title-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          gap: 15px;
-          margin-bottom: 17px;
-        }
-
-        h2 {
-          font-size: 25px;
-          letter-spacing: -0.04em;
-          margin: 0;
-        }
-
-        .submission-count {
-          color: #ff5555;
-          font-size: 9px;
-          font-weight: 900;
-          border: 1px solid #352020;
-          background: #130909;
-          padding: 8px 10px;
-          border-radius: 8px;
-        }
-
-        .orders-grid {
-          display: grid;
-          grid-template-columns: repeat(
-            auto-fit,
-            minmax(250px, 1fr)
-          );
-          gap: 12px;
-        }
-
-        .order-card {
-          text-align: left;
+        .card {
+          margin-top: 25px;
+          background: rgba(15, 15, 15, 0.9);
           border: 1px solid #252525;
-          border-radius: 15px;
-          padding: 17px;
-          background: rgba(
-            15,
-            15,
-            15,
-            0.9
-          );
-          color: #fff;
-          cursor: pointer;
-          transition: 0.2s ease;
-          width: 100%;
-        }
-
-        .order-card:hover {
-          transform: translateY(-3px);
-          border-color: rgba(
-            255,
-            48,
-            48,
-            0.5
-          );
+          border-radius: 22px;
+          padding: 22px;
           box-shadow:
-            0 12px 35px
-            rgba(
-              255,
-              30,
-              30,
-              0.09
-            );
+            0 25px 80px rgba(0, 0, 0, 0.35),
+            inset 0 1px rgba(255, 255, 255, 0.025);
         }
 
-        .order-card-top {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 18px;
+        .brand-card {
+          border-color: rgba(255, 32, 32, 0.25);
         }
 
-        .order-id {
-          color: #ff4444;
-          font-size: 11px;
-          font-weight: 950;
+        .section-heading {
+          margin-bottom: 20px;
         }
 
-        .status {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 99px;
-          padding: 5px 8px;
-          font-size: 8px;
-          font-weight: 950;
+        .section-heading h1 {
+          font-size: clamp(25px, 5vw, 38px);
+          margin: 5px 0;
+          letter-spacing: -1.5px;
         }
 
-        .status.pending {
-          background: rgba(
-            255,
-            174,
-            0,
-            0.1
-          );
-          border: 1px solid
-            rgba(255, 174, 0, 0.3);
-          color: #ffc04d;
-        }
-
-        .status.confirmed {
-          background: rgba(
-            30,
-            220,
-            120,
-            0.1
-          );
-          border: 1px solid
-            rgba(30, 220, 120, 0.3);
-          color: #55e59a;
-        }
-
-        .status.failed {
-          background: rgba(
-            255,
-            48,
-            48,
-            0.1
-          );
-          border: 1px solid
-            rgba(255, 48, 48, 0.35);
-          color: #ff6969;
-        }
-
-        .order-card h3 {
-          margin: 0 0 5px;
-          font-size: 15px;
-        }
-
-        .customer-email {
-          color: #666;
-          font-size: 10px;
-          margin: 0 0 17px;
-          word-break: break-word;
-        }
-
-        .order-info {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .order-info div {
-          background: #0a0a0a;
-          border: 1px solid #1d1d1d;
-          border-radius: 9px;
-          padding: 9px;
-        }
-
-        .order-info span,
-        .customer-box span,
-        .review-details span {
-          display: block;
-          color: #555;
-          font-size: 7px;
-          font-weight: 900;
-          letter-spacing: 0.1em;
-          margin-bottom: 4px;
-        }
-
-        .order-info strong {
-          font-size: 10px;
-        }
-
-        .submitted {
-          color: #555;
-          font-size: 8px;
-          margin-top: 13px;
-        }
-
-        .empty-card,
-        .settings-card {
-          background: rgba(
-            14,
-            14,
-            14,
-            0.92
-          );
-          border: 1px solid #222;
-          border-radius: 17px;
-          padding: 25px;
-        }
-
-        .empty-card {
-          text-align: center;
-          color: #666;
-        }
-
-        .empty-icon {
-          margin: 0 auto 10px;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          color: #55e59a;
-          background: rgba(
-            30,
-            220,
-            120,
-            0.08
-          );
-          border: 1px solid
-            rgba(30, 220, 120, 0.2);
-        }
-
-        .empty-card strong {
-          display: block;
-          color: #ddd;
+        .section-heading p {
+          color: #888;
+          margin: 0;
+          line-height: 1.5;
           font-size: 13px;
         }
 
-        .empty-card p {
-          max-width: 450px;
-          margin: 8px auto 0;
-          line-height: 1.6;
-          font-size: 10px;
+        .eyebrow {
+          color: #ff3030;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1.8px;
         }
 
-        .settings-section {
-          margin-top: 55px;
+        .logo-editor {
+          display: grid;
+          grid-template-columns: 190px 1fr;
+          gap: 22px;
+          align-items: center;
+        }
+
+        .logo-preview-box {
+          width: 190px;
+          height: 190px;
+          border-radius: 22px;
+          border: 1px dashed #444;
+          background: #090909;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          overflow: hidden;
+        }
+
+        .logo-preview {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          padding: 15px;
+        }
+
+        .preview-placeholder {
+          font-size: 28px;
+          font-weight: 950;
+          letter-spacing: -2px;
+        }
+
+        .preview-placeholder span {
+          color: #ff2020;
+        }
+
+        .preview-loading {
+          color: #777;
+          font-size: 12px;
+        }
+
+        .logo-controls {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .file-button,
+        .save-button {
+          display: inline-flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 45px;
+          padding: 0 17px;
+          border-radius: 11px;
+          font-weight: 900;
+          font-size: 11px;
+          cursor: pointer;
+        }
+
+        .file-button {
+          background: #191919;
+          border: 1px solid #383838;
+          color: white;
+        }
+
+        .file-button input {
+          display: none;
+        }
+
+        .save-button {
+          border: 0;
+          background: #ff2020;
+          color: white;
+          box-shadow: 0 8px 30px rgba(255, 0, 0, 0.2);
+        }
+
+        .save-button:disabled,
+        .main-save:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .hint {
+          color: #666;
+          font-size: 11px;
+          margin: 0;
+        }
+
+        .success-message,
+        .save-message {
+          background: rgba(0, 180, 90, 0.1);
+          border: 1px solid rgba(0, 200, 100, 0.25);
+          color: #70e0a0;
+          border-radius: 10px;
+          padding: 11px 13px;
+          font-size: 11px;
         }
 
         .method-tabs {
           display: grid;
-          grid-template-columns: repeat(
-            4,
-            1fr
-          );
+          grid-template-columns: repeat(4, 1fr);
           gap: 8px;
-          margin-bottom: 12px;
-        }
-
-        .method-tab {
-          border: 1px solid #242424;
-          background: #101010;
-          color: #777;
-          border-radius: 12px;
-          padding: 13px 8px;
-          cursor: pointer;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          align-items: center;
-          transition: 0.2s ease;
-        }
-
-        .method-tab strong {
-          color: #aaa;
-          font-size: 18px;
-        }
-
-        .method-tab span {
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .method-tab.active {
-          color: #fff;
-          border-color: #ff3030;
-          background: rgba(
-            255,
-            48,
-            48,
-            0.09
-          );
-          box-shadow:
-            0 0 25px
-            rgba(
-              255,
-              48,
-              48,
-              0.1
-            );
-        }
-
-        .method-tab.active strong {
-          color: #ff4040;
-        }
-
-        .selected-method {
-          border-bottom: 1px solid #202020;
-          padding-bottom: 17px;
           margin-bottom: 20px;
         }
 
-        .selected-method span {
-          display: block;
-          color: #555;
-          font-size: 8px;
+        .method-tab {
+          border: 1px solid #282828;
+          background: #0b0b0b;
+          color: #888;
+          border-radius: 12px;
+          padding: 14px 8px;
+          font-size: 11px;
           font-weight: 900;
-          margin-bottom: 5px;
+          cursor: pointer;
+          transition: 0.2s;
         }
 
-        .selected-method strong {
-          font-size: 18px;
+        .method-tab span {
+          display: block;
+          color: #666;
+          margin-bottom: 4px;
+          font-size: 16px;
         }
 
-        .form-grid {
+        .method-tab.active {
+          color: white;
+          border-color: #ff2020;
+          background: rgba(255, 32, 32, 0.1);
+          box-shadow: 0 0 25px rgba(255, 0, 0, 0.08);
+        }
+
+        .method-tab.active span {
+          color: #ff2020;
+        }
+
+        .settings-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 15px;
+          gap: 16px;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
         }
 
         .field.full {
@@ -1795,81 +1633,45 @@ export default function AdminPage() {
         }
 
         .field label {
-          display: block;
-          color: #888;
-          font-size: 8px;
+          font-size: 10px;
           font-weight: 900;
-          letter-spacing: 0.1em;
-          margin-bottom: 7px;
+          color: #aaa;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
         }
 
         input,
         textarea {
           width: 100%;
           border: 1px solid #292929;
-          background: #080808;
-          color: #fff;
-          border-radius: 10px;
-          outline: none;
+          background: #090909;
+          color: white;
+          border-radius: 11px;
           padding: 13px;
+          outline: none;
           font: inherit;
-          font-size: 12px;
+          font-size: 13px;
+        }
+
+        input:focus,
+        textarea:focus {
+          border-color: #ff2020;
+          box-shadow: 0 0 0 3px rgba(255, 0, 0, 0.06);
         }
 
         textarea {
           min-height: 100px;
           resize: vertical;
-          line-height: 1.5;
         }
 
-        input:focus,
-        textarea:focus {
-          border-color: #ff3030;
-          box-shadow:
-            0 0 0 2px
-            rgba(
-              255,
-              48,
-              48,
-              0.08
-            );
-        }
-
-        .qr-section {
-          margin-top: 22px;
-          border-top: 1px solid #202020;
-          padding-top: 22px;
-        }
-
-        .qr-title {
-          margin: 0;
-          font-size: 11px;
-          font-weight: 950;
-        }
-
-        .qr-description {
-          margin: 5px 0 15px;
-          color: #666;
-          font-size: 9px;
-        }
-
-        .qr-content {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          flex-wrap: wrap;
-        }
-
-        .qr-preview,
-        .qr-empty {
-          width: 130px;
-          height: 130px;
-          border-radius: 12px;
-          background: #080808;
-          border: 1px solid #292929;
-          display: grid;
-          place-items: center;
+        .qr-preview {
+          margin-top: 8px;
+          width: 160px;
+          height: 160px;
+          border-radius: 15px;
           overflow: hidden;
+          background: white;
+          padding: 8px;
         }
 
         .qr-preview img {
@@ -1878,449 +1680,255 @@ export default function AdminPage() {
           object-fit: contain;
         }
 
-        .qr-empty {
-          color: #444;
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .upload-qr {
-          border: 1px solid #333;
-          background: #161616;
-          color: #ddd;
-          padding: 12px 15px;
-          border-radius: 10px;
-          font-size: 9px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .upload-qr:hover {
-          border-color: #ff3030;
-        }
-
-        .upload-qr input {
-          display: none;
-        }
-
-        .settings-success,
-        .settings-error,
-        .success-message {
-          margin-top: 15px;
-          padding: 11px;
-          border-radius: 9px;
-          font-size: 10px;
-        }
-
-        .settings-success,
-        .success-message {
-          color: #65e9a0;
-          background: rgba(
-            30,
-            220,
-            120,
-            0.07
-          );
-          border: 1px solid
-            rgba(30, 220, 120, 0.2);
-        }
-
-        .settings-error {
-          color: #ff7777;
-          background: rgba(
-            255,
-            48,
-            48,
-            0.07
-          );
-          border: 1px solid
-            rgba(255, 48, 48, 0.2);
-        }
-
-        .save-button {
+        .main-save {
           width: 100%;
-          margin-top: 18px;
           border: 0;
-          border-radius: 11px;
+          border-radius: 12px;
           min-height: 50px;
-          background: #ff3030;
-          color: #fff;
-          font-size: 10px;
+          margin-top: 18px;
+          background: #ff2020;
+          color: white;
           font-weight: 950;
           cursor: pointer;
-          box-shadow:
-            0 10px 30px
-            rgba(
-              255,
-              48,
-              48,
-              0.14
-            );
+          box-shadow: 0 12px 35px rgba(255, 0, 0, 0.18);
         }
 
-        .save-button:hover {
-          background: #ff4545;
-        }
-
-        .save-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .loading-settings {
-          color: #666;
-          text-align: center;
-          padding: 30px;
-          font-size: 11px;
-        }
-
-        .modal-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 100;
-          background: rgba(
-            0,
-            0,
-            0,
-            0.82
-          );
-          backdrop-filter: blur(8px);
+        .queue-heading {
           display: flex;
-          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          align-items: flex-start;
+        }
+
+        .queue-count {
+          min-width: 45px;
+          height: 45px;
+          display: flex;
           justify-content: center;
-          padding: 16px;
-          animation: fadeIn 0.2s ease;
+          align-items: center;
+          border-radius: 13px;
+          background: rgba(255, 32, 32, 0.12);
+          border: 1px solid rgba(255, 32, 32, 0.35);
+          color: #ff3030;
+          font-weight: 950;
         }
 
-        .order-modal {
-          width: 100%;
-          max-width: 650px;
-          max-height: 92vh;
-          overflow-y: auto;
-          position: relative;
-          background: #0e0e0e;
-          border: 1px solid #2d2d2d;
-          border-radius: 19px;
-          padding: 22px;
-          box-shadow:
-            0 0 70px
-            rgba(
-              255,
-              30,
-              30,
-              0.13
-            );
-          animation: popup 0.25s ease;
+        .empty-state {
+          text-align: center;
+          padding: 50px 15px;
+          color: #666;
+          border: 1px dashed #292929;
+          border-radius: 15px;
+          font-size: 13px;
         }
 
-        .close-button {
-          position: absolute;
-          right: 15px;
-          top: 15px;
-          width: 34px;
-          height: 34px;
-          border-radius: 50%;
+        .orders {
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
+
+        .order-card {
           border: 1px solid #292929;
-          background: #151515;
-          color: #aaa;
-          font-size: 21px;
-          cursor: pointer;
+          border-radius: 17px;
+          background: #0a0a0a;
+          padding: 17px;
         }
 
-        .close-button:hover {
-          color: #fff;
-          border-color: #ff3030;
+        .order-top {
+          display: flex;
+          justify-content: space-between;
+          gap: 15px;
         }
 
-        .order-modal h2 {
-          margin-right: 45px;
-          margin-bottom: 13px;
-        }
-
-        .review-status {
-          margin-bottom: 18px;
-        }
-
-        .status.large {
-          padding: 8px 12px;
+        .order-id {
+          color: #ff3030;
           font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1px;
         }
 
-        .customer-box {
+        .order-card h2 {
+          margin: 5px 0 2px;
+          font-size: 18px;
+        }
+
+        .order-card p {
+          margin: 0;
+          color: #777;
+          font-size: 12px;
+        }
+
+        .amount {
+          color: #fff;
+          font-size: 20px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .order-info {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(3, 1fr);
           gap: 8px;
+          margin-top: 16px;
         }
 
-        .customer-box > div,
-        .review-details > div {
-          background: #090909;
+        .order-info > div {
+          background: #111;
           border: 1px solid #202020;
           border-radius: 10px;
-          padding: 11px;
+          padding: 10px;
         }
 
-        .customer-box strong,
-        .review-details strong {
+        .order-info span {
           display: block;
-          font-size: 10px;
-          word-break: break-word;
-        }
-
-        .screenshot-box {
-          margin-top: 15px;
-          background: #090909;
-          border: 1px solid #202020;
-          border-radius: 12px;
-          padding: 13px;
-        }
-
-        .box-heading p {
-          margin: 0;
-          font-size: 9px;
-          font-weight: 950;
-        }
-
-        .box-heading span {
           color: #555;
           font-size: 8px;
+          font-weight: 900;
+          margin-bottom: 5px;
         }
 
-        .image-link {
-          display: block;
-          margin-top: 12px;
-          position: relative;
-          border-radius: 10px;
-          overflow: hidden;
+        .order-info strong {
+          font-size: 10px;
+          color: #ddd;
+        }
+
+        .transaction-image {
+          margin-top: 15px;
+          padding: 12px;
+          background: #111;
+          border-radius: 13px;
+          border: 1px solid #222;
+        }
+
+        .transaction-image img {
+          width: 100%;
+          max-height: 400px;
+          object-fit: contain;
+          border-radius: 9px;
           background: #000;
+        }
+
+        .transaction-image a {
+          display: inline-block;
+          margin-top: 10px;
+          color: #ff3030;
+          font-size: 10px;
+          font-weight: 900;
           text-decoration: none;
         }
 
-        .image-link img {
-          display: block;
-          width: 100%;
-          max-height: 360px;
-          object-fit: contain;
-        }
-
-        .image-link span {
-          position: absolute;
-          bottom: 9px;
-          right: 9px;
-          background: rgba(
-            0,
-            0,
-            0,
-            0.85
-          );
-          color: #fff;
-          padding: 7px 9px;
-          border-radius: 7px;
-          font-size: 7px;
-          font-weight: 900;
-        }
-
-        .no-image {
-          margin-top: 12px;
-          padding: 25px;
-          text-align: center;
-          color: #555;
-          font-size: 9px;
-          border: 1px dashed #292929;
-          border-radius: 9px;
-        }
-
-        .review-details {
+        .status-actions {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(3, 1fr);
           gap: 8px;
-          margin-top: 8px;
+          margin-top: 14px;
         }
 
-        .status-control {
-          margin-top: 18px;
-          border-top: 1px solid #222;
-          padding-top: 18px;
-        }
-
-        .status-control h3 {
-          margin: 0 0 5px;
-          font-size: 14px;
-        }
-
-        .status-control > p:not(.eyebrow) {
-          color: #666;
-          font-size: 9px;
-          line-height: 1.5;
-          margin: 0;
-        }
-
-        .status-buttons {
-          display: grid;
-          grid-template-columns: repeat(
-            3,
-            1fr
-          );
-          gap: 8px;
-          margin-top: 13px;
-        }
-
-        .status-buttons button {
-          min-height: 45px;
-          border-radius: 9px;
+        .status-actions button {
+          min-height: 42px;
+          border-radius: 10px;
           cursor: pointer;
-          font-size: 8px;
+          font-size: 10px;
           font-weight: 950;
+          border: 1px solid;
+          background: transparent;
         }
 
-        .status-buttons button:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
+        .status-actions .pending {
+          color: #e8b84b;
+          border-color: rgba(232, 184, 75, 0.3);
         }
 
-        .pending-button {
-          border: 1px solid #705b20;
-          background: rgba(
-            255,
-            174,
-            0,
-            0.08
-          );
-          color: #ffc04d;
+        .status-actions .confirmed {
+          color: #5be09a;
+          border-color: rgba(91, 224, 154, 0.3);
         }
 
-        .confirmed-button {
-          border: 1px solid #237047;
-          background: rgba(
-            30,
-            220,
-            120,
-            0.08
-          );
-          color: #55e59a;
+        .status-actions .failed {
+          color: #ff4444;
+          border-color: rgba(255, 68, 68, 0.3);
         }
 
-        .failed-button {
-          border: 1px solid #702323;
-          background: rgba(
-            255,
-            48,
-            48,
-            0.08
-          );
-          color: #ff6969;
+        .status-actions button:hover {
+          background: rgba(255, 255, 255, 0.05);
         }
 
         footer {
           text-align: center;
-          padding: 55px 0 25px;
-          color: #444;
+          padding: 35px 10px;
+          color: #555;
+          font-size: 11px;
         }
 
-        footer strong {
+        .footer-logo {
+          width: 55px;
+          height: 55px;
+          object-fit: contain;
+          margin-bottom: 8px;
+        }
+
+        .footer-brand {
           font-size: 20px;
           font-weight: 950;
+          letter-spacing: -1px;
+          color: white;
         }
 
-        footer p {
-          font-size: 7px;
-          font-weight: 900;
-          letter-spacing: 0.14em;
-        }
-
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(18px);
-          }
-
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes pulse {
+        @keyframes orbMove {
           0%,
           100% {
-            opacity: 1;
-            transform: scale(1);
+            transform: translate(0, 0);
           }
 
           50% {
-            opacity: 0.45;
-            transform: scale(0.75);
+            transform: translate(30px, 25px);
           }
         }
 
-        @keyframes floatGlow {
-          0%,
-          100% {
-            transform: translate(
-              0,
-              0
-            );
-          }
-
-          50% {
-            transform: translate(
-              25px,
-              -20px
-            );
-          }
-        }
-
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-
-          to {
-            opacity: 1;
-          }
-        }
-
-        @keyframes popup {
-          from {
-            opacity: 0;
-            transform: translateY(
-                18px
-              )
-              scale(0.96);
-          }
-
-          to {
-            opacity: 1;
-            transform: translateY(0)
-              scale(1);
-          }
-        }
-
-        @media (max-width: 650px) {
-          .admin-page {
-            padding: 13px;
-          }
-
+        @media (max-width: 700px) {
           .topbar {
-            align-items: flex-start;
-            flex-direction: column;
+            padding: 10px 12px;
           }
 
-          .top-actions {
-            width: 100%;
-            justify-content: flex-start;
+          .admin-label {
+            display: none;
           }
 
-          .dashboard-heading {
-            padding-top: 32px;
-            flex-direction: column;
+          .brand-logo {
+            width: 38px;
+            height: 38px;
           }
 
-          .method-tabs {
-            grid-template-columns: 1fr 1fr;
+          .brand-text {
+            font-size: 20px;
           }
 
-          .form-grid {
+          .top-actions a,
+          .top-actions button {
+            padding: 8px 7px;
+            font-size: 8px;
+          }
+
+          .container {
+            width: min(100% - 18px, 1050px);
+          }
+
+          .card {
+            padding: 16px;
+            border-radius: 18px;
+          }
+
+          .logo-editor {
+            grid-template-columns: 1fr;
+          }
+
+          .logo-preview-box {
+            width: 150px;
+            height: 150px;
+          }
+
+          .settings-grid {
             grid-template-columns: 1fr;
           }
 
@@ -2328,13 +1936,20 @@ export default function AdminPage() {
             grid-column: auto;
           }
 
-          .customer-box,
-          .review-details {
+          .method-tabs {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .order-info {
             grid-template-columns: 1fr;
           }
 
-          .status-buttons {
-            grid-template-columns: 1fr;
+          .order-top {
+            flex-direction: column;
+          }
+
+          .amount {
+            font-size: 18px;
           }
         }
       `}</style>
