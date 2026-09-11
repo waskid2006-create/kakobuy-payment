@@ -10,21 +10,16 @@ const VALID_STATUSES = [
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } =
-      new URL(request.url)
+    const { searchParams } = new URL(request.url)
 
-    const orderId =
-      searchParams.get("orderId")
-
-    const email =
-      searchParams.get("email")
+    const orderId = searchParams.get("orderId")?.trim() || ""
+    const email = searchParams.get("email")?.trim() || ""
 
     /*
      * ADMIN MODE
      *
-     * When there is no orderId, return orders
-     * where the buyer has submitted a transaction
-     * and is waiting for admin confirmation.
+     * Only show buyers who have submitted a transaction
+     * AND are still waiting for payment confirmation.
      */
     if (!orderId) {
       const result = await sql`
@@ -44,6 +39,7 @@ export async function GET(request: Request) {
           updated_at
         FROM orders
         WHERE transaction_submitted = true
+          AND COALESCE(payment_status, 'pending') = 'pending'
         ORDER BY
           transaction_submitted_at DESC NULLS LAST,
           created_at DESC
@@ -55,7 +51,7 @@ export async function GET(request: Request) {
       })
     }
 
-    /* ==================== 2. BUYER / SINGLE ORDER MODE ==================== */
+    /* ==================== BUYER / SINGLE ORDER MODE ==================== */
 
     const result = email
       ? await sql`
@@ -75,7 +71,7 @@ export async function GET(request: Request) {
             updated_at
           FROM orders
           WHERE id = ${orderId}
-          AND email = ${email}
+            AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
           LIMIT 1
         `
       : await sql`
@@ -101,6 +97,7 @@ export async function GET(request: Request) {
     if (result.length === 0) {
       return Response.json(
         {
+          success: false,
           error: "Order not found.",
         },
         { status: 404 }
@@ -112,40 +109,34 @@ export async function GET(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error(
-      "Payment status GET error:",
-      error
-    )
+    console.error("Payment status GET error:", error)
 
     return Response.json(
       {
-        error:
-          "Unable to get payment status.",
+        success: false,
+        error: "Unable to get payment status.",
       },
       { status: 500 }
     )
   }
 }
 
-/* ==================== 3. RECORD WALLET COPY ==================== */
+/* ==================== 2. RECORD WALLET COPY ==================== */
 
 export async function POST(request: Request) {
   try {
-    const body =
-      await request.json()
+    const body = await request.json()
 
-    const orderId =
-      body.orderId
-
-    const email =
-      body.email
-
-    const paymentMethod =
-      body.paymentMethod
+    const orderId = String(body?.orderId || "").trim()
+    const email = String(body?.email || "").trim()
+    const paymentMethod = String(
+      body?.paymentMethod || ""
+    ).trim()
 
     if (!orderId) {
       return Response.json(
         {
+          success: false,
           error: "Missing order ID.",
         },
         { status: 400 }
@@ -159,12 +150,12 @@ export async function POST(request: Request) {
             wallet_copied = true,
             wallet_copied_at = NOW(),
             payment_method = COALESCE(
-              ${paymentMethod || null},
+              NULLIF(${paymentMethod}, ''),
               payment_method
             ),
             updated_at = NOW()
           WHERE id = ${orderId}
-          AND email = ${email}
+            AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
           RETURNING
             id,
             full_name,
@@ -186,7 +177,7 @@ export async function POST(request: Request) {
             wallet_copied = true,
             wallet_copied_at = NOW(),
             payment_method = COALESCE(
-              ${paymentMethod || null},
+              NULLIF(${paymentMethod}, ''),
               payment_method
             ),
             updated_at = NOW()
@@ -210,6 +201,7 @@ export async function POST(request: Request) {
     if (result.length === 0) {
       return Response.json(
         {
+          success: false,
           error: "Order not found.",
         },
         { status: 404 }
@@ -221,52 +213,46 @@ export async function POST(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error(
-      "Payment status POST error:",
-      error
-    )
+    console.error("Payment status POST error:", error)
 
     return Response.json(
       {
-        error:
-          "Unable to update payment status.",
+        success: false,
+        error: "Unable to update payment status.",
       },
       { status: 500 }
     )
   }
 }
 
-/* ==================== 4. ADMIN UPDATE PAYMENT STATUS ==================== */
+/* ==================== 3. ADMIN UPDATE PAYMENT STATUS ==================== */
 
 export async function PUT(request: Request) {
   try {
-    const body =
-      await request.json()
+    const body = await request.json()
 
-    const orderId =
-      body.orderId
+    const orderId = String(body?.orderId || "").trim()
 
-    const status =
-      String(
-        body.status || ""
-      ).toLowerCase()
+    const status = String(
+      body?.status || ""
+    )
+      .trim()
+      .toLowerCase()
 
     if (!orderId) {
       return Response.json(
         {
+          success: false,
           error: "Missing order ID.",
         },
         { status: 400 }
       )
     }
 
-    if (
-      !VALID_STATUSES.includes(
-        status
-      )
-    ) {
+    if (!VALID_STATUSES.includes(status)) {
       return Response.json(
         {
+          success: false,
           error:
             "Invalid payment status. Use pending, confirmed, or failed.",
         },
@@ -299,6 +285,7 @@ export async function PUT(request: Request) {
     if (result.length === 0) {
       return Response.json(
         {
+          success: false,
           error: "Order not found.",
         },
         { status: 404 }
@@ -310,15 +297,12 @@ export async function PUT(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error(
-      "Payment status PUT error:",
-      error
-    )
+    console.error("Payment status PUT error:", error)
 
     return Response.json(
       {
-        error:
-          "Unable to update payment status.",
+        success: false,
+        error: "Unable to update payment status.",
       },
       { status: 500 }
     )
