@@ -122,15 +122,14 @@ export async function POST(request: Request) {
     }
 
     const blob = await put(
-      filename,
-      file,
-      {
-        access: "public",
-        addRandomSuffix: true,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      }
-    )
-
+  filename,
+  file,
+  {
+    access: "public",
+    addRandomSuffix: true,
+    storeId: process.env.BLOB_STORE_ID,
+  }
+)
     const updated = email
       ? await sql`
           UPDATE orders
