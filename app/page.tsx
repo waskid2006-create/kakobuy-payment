@@ -1,6 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+} from "react"
 
 const CHECK_ORDER_URL =
   "https://kakobuy-check-order.vercel.app/"
@@ -77,7 +81,8 @@ type PaymentMethod = {
   name: string
   information: string | null
   wallet_address: string | null
-  qr_image: string | null
+  qr_image_url?: string | null
+  qr_image?: string | null
   hero_title?: string | null
   hero_heading?: string | null
   hero_subtitle?: string | null
@@ -111,28 +116,27 @@ function formatMoney(
   value: number | string | null | undefined
 ) {
   const amount = Number(value || 0)
-
   return `$${amount.toFixed(2)}`
 }
 
 function formatTime(seconds: number) {
-  const safeSeconds = Math.max(
+  const safe = Math.max(
     0,
     seconds
   )
 
   const minutes = Math.floor(
-    safeSeconds / 60
+    safe / 60
   )
 
-  const remainingSeconds =
-    safeSeconds % 60
+  const secondsLeft =
+    safe % 60
 
   return `${String(minutes).padStart(
     2,
     "0"
   )}:${String(
-    remainingSeconds
+    secondsLeft
   ).padStart(2, "0")}`
 }
 
@@ -145,6 +149,14 @@ export default function Page() {
 
   const [error, setError] =
     useState("")
+
+  const [details, setDetails] =
+    useState({
+      orderId: "",
+      email: "",
+      total: "",
+      method: "",
+    })
 
   const [
     selectedMethod,
@@ -163,25 +175,19 @@ export default function Page() {
     setPaymentMethodLoading,
   ] = useState(false)
 
+  const [logoUrl, setLogoUrl] =
+    useState("")
+
   const [
     paymentVisible,
     setPaymentVisible,
   ] = useState(false)
 
-  /*
-   * 5 MINUTES
-   * 5 × 60 = 300 SECONDS
-   */
   const [timeLeft, setTimeLeft] =
     useState(300)
 
   const [copied, setCopied] =
     useState(false)
-
-  const [
-    transactionFile,
-    setTransactionFile,
-  ] = useState<File | null>(null)
 
   const [
     transactionPreview,
@@ -206,10 +212,8 @@ export default function Page() {
     setSubmissionMessage,
   ] = useState("")
 
-  const [
-    uploadError,
-    setUploadError,
-  ] = useState("")
+  const [uploadError, setUploadError] =
+    useState("")
 
   const [statusOpen, setStatusOpen] =
     useState(false)
@@ -226,17 +230,12 @@ export default function Page() {
     setStatusLoading,
   ] = useState(false)
 
-  const [details, setDetails] =
-    useState({
-      orderId: "",
-      email: "",
-      total: "",
-      method: "",
-    })
-
   /*
-   * GET URL INFORMATION
+   * =====================================================
+   * LOAD URL + LOGO
+   * =====================================================
    */
+
   useEffect(() => {
     const params =
       new URLSearchParams(
@@ -277,105 +276,191 @@ export default function Page() {
         )
       }
     }
+
+    /*
+     * Load shared Kakobuy logo.
+     */
+    fetch("/api/site-settings", {
+      cache: "no-store",
+    })
+      .then((response) =>
+        response.json()
+      )
+      .then((data) => {
+        if (data?.success) {
+          setLogoUrl(
+            data.logo_url || ""
+          )
+        }
+      })
+      .catch((err) => {
+        console.error(
+          "Logo loading error:",
+          err
+        )
+      })
   }, [])
 
   /*
-   * LOAD ORDER
+   * =====================================================
+   * NO ORDER ID
+   * =====================================================
+   *
+   * Do NOT show "ORDER NOT FOUND" when Page 3
+   * was simply opened without an order.
+   *
+   * Return the buyer to Page 2.
    */
-  const loadOrder = async () => {
-    if (!details.orderId) {
-      return
-    }
 
-    try {
-      const params =
-        new URLSearchParams()
+  useEffect(() => {
+    if (!loading) return
 
-      params.set(
-        "id",
-        details.orderId
-      )
+    const timer =
+      setTimeout(() => {
+        const params =
+          new URLSearchParams(
+            window.location.search
+          )
 
-      if (details.email) {
-        params.set(
-          "email",
-          details.email
-        )
-      }
+        const orderId =
+          params.get("orderId") ||
+          params.get("id")
 
-      const response =
-        await fetch(
-          `/api/orders?${params.toString()}`,
-          {
-            cache: "no-store",
-          }
-        )
-
-      const data =
-        await response.json()
-
-      if (
-        !response.ok ||
-        !data?.success
-      ) {
-        throw new Error(
-          data?.error ||
-            "Unable to load order."
-        )
-      }
-
-      setOrder(data.order)
-
-      if (
-        data.order?.payment_method
-      ) {
-        const found = methods.find(
-          (item) =>
-            item.id.toLowerCase() ===
-            String(
-              data.order
-                .payment_method
-            ).toLowerCase()
-        )
-
-        if (found) {
-          setSelectedMethod(
-            found.id
+        if (!orderId) {
+          window.location.replace(
+            CHECK_ORDER_URL
           )
         }
+      }, 1500)
+
+    return () =>
+      clearTimeout(timer)
+  }, [loading])
+
+  /*
+   * =====================================================
+   * LOAD ORDER
+   * =====================================================
+   */
+
+  const loadOrder =
+    async (
+      orderId: string,
+      email: string
+    ) => {
+      if (!orderId) {
+        return
       }
 
-      setPaymentStatus(
-        normalizeStatus(
-          data.order
-            ?.payment_status
-        )
-      )
-    } catch (err) {
-      console.error(err)
+      try {
+        setError("")
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load order."
-      )
-    } finally {
-      setLoading(false)
+        const params =
+          new URLSearchParams()
+
+        params.set(
+          "id",
+          orderId
+        )
+
+        if (email) {
+          params.set(
+            "email",
+            email
+          )
+        }
+
+        const response =
+          await fetch(
+            `/api/orders?${params.toString()}`,
+            {
+              cache: "no-store",
+            }
+          )
+
+        const data =
+          await response.json()
+
+        if (
+          !response.ok ||
+          !data?.success ||
+          !data?.order
+        ) {
+          throw new Error(
+            data?.error ||
+              "Unable to load order."
+          )
+        }
+
+        const loadedOrder =
+          data.order as Order
+
+        setOrder(
+          loadedOrder
+        )
+
+        setPaymentStatus(
+          normalizeStatus(
+            loadedOrder.payment_status
+          )
+        )
+
+        if (
+          loadedOrder.payment_method
+        ) {
+          const found =
+            methods.find(
+              (item) =>
+                item.id.toLowerCase() ===
+                String(
+                  loadedOrder.payment_method
+                ).toLowerCase()
+            )
+
+          if (found) {
+            setSelectedMethod(
+              found.id
+            )
+          }
+        }
+      } catch (err) {
+        console.error(
+          "Order loading error:",
+          err
+        )
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load order."
+        )
+      } finally {
+        setLoading(false)
+      }
     }
-  }
+
+  /*
+   * Wait until URL details have been read,
+   * then load the order.
+   */
 
   useEffect(() => {
     if (!details.orderId) {
       return
     }
 
-    loadOrder()
+    loadOrder(
+      details.orderId,
+      details.email
+    )
 
     const interval =
-      setInterval(
-        loadOrder,
-        5000
-      )
+      setInterval(() => {
+        loadOrder(
+          details.orderId,
+          details.email
+        )
+      }, 5000)
 
     return () =>
       clearInterval(interval)
@@ -385,8 +470,11 @@ export default function Page() {
   ])
 
   /*
+   * =====================================================
    * LOAD PAYMENT METHOD
+   * =====================================================
    */
+
   const loadPaymentMethod =
     async (
       methodId: string
@@ -409,21 +497,43 @@ export default function Page() {
         const data =
           await response.json()
 
-        if (
-          !response.ok ||
-          !data?.paymentMethod
-        ) {
+        if (!response.ok) {
           throw new Error(
             data?.error ||
               "Unable to load payment information."
           )
         }
 
+        /*
+         * Support both:
+         *
+         * { paymentMethod: {...} }
+         *
+         * and
+         *
+         * { method: {...} }
+         *
+         */
+
+        const method =
+          data?.paymentMethod ||
+          data?.method
+
+        if (!method) {
+          throw new Error(
+            "Payment method information is unavailable."
+          )
+        }
+
         setPaymentMethod(
-          data.paymentMethod
+          method
         )
       } catch (err) {
-        console.error(err)
+        console.error(
+          "Payment method error:",
+          err
+        )
+
         setPaymentMethod(null)
       } finally {
         setPaymentMethodLoading(
@@ -444,21 +554,12 @@ export default function Page() {
 
   /*
    * =====================================================
-   * 5-MINUTE COUNTDOWN
+   * 5 MINUTE TIMER
    * =====================================================
    *
-   * The countdown ONLY starts after COPY.
-   *
-   * 300 → 299 → 298 ... → 2 → 1 → 0
-   *
-   * When it reaches 0:
-   *
-   *     AUTOMATICALLY GO TO PAGE 2
-   *
-   * window.location.replace() prevents
-   * the expired payment page remaining
-   * in browser history.
+   * Timer starts ONLY after COPY.
    */
+
   useEffect(() => {
     if (!paymentVisible) {
       return
@@ -491,8 +592,11 @@ export default function Page() {
   ])
 
   /*
+   * =====================================================
    * PAYMENT STATUS
+   * =====================================================
    */
+
   const loadPaymentStatus =
     async (
       showLoading = false
@@ -503,7 +607,9 @@ export default function Page() {
 
       try {
         if (showLoading) {
-          setStatusLoading(true)
+          setStatusLoading(
+            true
+          )
         }
 
         const params =
@@ -541,7 +647,7 @@ export default function Page() {
 
         const currentStatus =
           normalizeStatus(
-            data.order
+            data?.order
               ?.payment_status
           )
 
@@ -609,14 +715,16 @@ export default function Page() {
   ])
 
   /*
+   * =====================================================
    * COPY WALLET
-   *
-   * COPY = START 5 MINUTES
+   * =====================================================
    */
+
   const copyInfo = async () => {
-    if (
-      !paymentMethod?.wallet_address
-    ) {
+    const wallet =
+      paymentMethod?.wallet_address
+
+    if (!wallet) {
       alert(
         "Wallet address is not available."
       )
@@ -634,18 +742,17 @@ export default function Page() {
 
     try {
       await navigator.clipboard.writeText(
-        paymentMethod.wallet_address
+        wallet
       )
 
-      setCopied(true)
-
       /*
-       * IMPORTANT:
-       * Start exactly at 5 minutes.
+       * EXACTLY 5 MINUTES.
        */
       setTimeLeft(300)
 
       setPaymentVisible(true)
+
+      setCopied(true)
 
       await fetch(
         "/api/payment-status",
@@ -670,7 +777,10 @@ export default function Page() {
         setCopied(false)
       }, 2500)
     } catch (err) {
-      console.error(err)
+      console.error(
+        "Copy wallet error:",
+        err
+      )
 
       alert(
         "Unable to copy wallet address."
@@ -679,8 +789,11 @@ export default function Page() {
   }
 
   /*
-   * SELECT PAYMENT METHOD
+   * =====================================================
+   * CHANGE PAYMENT METHOD
+   * =====================================================
    */
+
   const selectMethod = (
     methodId: string
   ) => {
@@ -694,37 +807,28 @@ export default function Page() {
       methodId
     )
 
-    setPaymentVisible(
-      false
-    )
+    setPaymentVisible(false)
 
     setTimeLeft(300)
 
-    setTransactionFile(
-      null
-    )
+    setTransactionPreview("")
 
-    setTransactionPreview(
-      ""
-    )
+    setTransactionUploaded(false)
 
-    setTransactionUploaded(
-      false
-    )
-
-    setSubmissionMessage(
-      ""
-    )
+    setSubmissionMessage("")
 
     setUploadError("")
   }
 
   /*
-   * UPLOAD SCREENSHOT
+   * =====================================================
+   * UPLOAD PAYMENT SCREENSHOT
+   * =====================================================
    */
+
   const handleFileChange =
     async (
-      event: React.ChangeEvent<HTMLInputElement>
+      event: ChangeEvent<HTMLInputElement>
     ) => {
       const file =
         event.target.files?.[0]
@@ -765,12 +869,8 @@ export default function Page() {
         return
       }
 
-      setTransactionFile(file)
-
       const previewUrl =
-        URL.createObjectURL(
-          file
-        )
+        URL.createObjectURL(file)
 
       setTransactionPreview(
         previewUrl
@@ -782,6 +882,10 @@ export default function Page() {
         const formData =
           new FormData()
 
+        /*
+         * Keep the field name expected
+         * by the existing upload API.
+         */
         formData.append(
           "file",
           file
@@ -845,7 +949,10 @@ export default function Page() {
           }
         )
       } catch (err) {
-        console.error(err)
+        console.error(
+          "Transaction upload error:",
+          err
+        )
 
         setTransactionUploaded(
           false
@@ -862,8 +969,11 @@ export default function Page() {
     }
 
   /*
-   * SEND PAYMENT TO ADMIN
+   * =====================================================
+   * CONFIRM PAYMENT
+   * =====================================================
    */
+
   const completePaymentSubmission =
     async () => {
       if (!details.orderId) {
@@ -886,6 +996,7 @@ export default function Page() {
 
       try {
         setSubmitting(true)
+
         setSubmissionMessage("")
 
         const response =
@@ -921,6 +1032,10 @@ export default function Page() {
           )
         }
 
+        setPaymentStatus(
+          "pending"
+        )
+
         setOrder(
           (current) => {
             if (!current) {
@@ -943,36 +1058,25 @@ export default function Page() {
           }
         )
 
-        setPaymentStatus(
-          "pending"
-        )
-
         setSubmissionMessage(
           "Payment submitted successfully. Your screenshot has been sent to the admin for review."
         )
 
-        setPaymentVisible(
-          false
-        )
+        setPaymentVisible(false)
 
-        setTransactionFile(
-          null
-        )
+        setTransactionPreview("")
 
-        setTransactionPreview(
-          ""
-        )
+        setTransactionUploaded(false)
 
-        setTransactionUploaded(
-          false
-        )
-
-        await loadOrder()
-        await loadPaymentStatus(
-          false
+        await loadOrder(
+          details.orderId,
+          details.email
         )
       } catch (err) {
-        console.error(err)
+        console.error(
+          "Payment submission error:",
+          err
+        )
 
         setSubmissionMessage(
           err instanceof Error
@@ -985,13 +1089,14 @@ export default function Page() {
     }
 
   /*
-   * CLEAN PREVIEW
+   * =====================================================
+   * CLEANUP PREVIEW
+   * =====================================================
    */
+
   useEffect(() => {
     return () => {
-      if (
-        transactionPreview
-      ) {
+      if (transactionPreview) {
         URL.revokeObjectURL(
           transactionPreview
         )
@@ -1000,21 +1105,38 @@ export default function Page() {
   }, [transactionPreview])
 
   /*
+   * =====================================================
    * LOADING
+   * =====================================================
    */
+
   if (loading) {
     return (
-      <main className="screen loading-screen">
+      <main className="screen center-screen">
         <div className="glow glow-one" />
         <div className="glow glow-two" />
 
-        <div className="loader-box">
+        <div className="loading-box">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Kakobuy"
+              className="loading-logo"
+            />
+          ) : (
+            <div className="loading-brand">
+              KAKO<span>BUY</span>
+            </div>
+          )}
+
           <div className="spinner" />
 
-          <h2>KAKOBUY</h2>
+          <h2>
+            Loading your order...
+          </h2>
 
           <p>
-            Loading your order...
+            Please wait.
           </p>
         </div>
       </main>
@@ -1022,15 +1144,30 @@ export default function Page() {
   }
 
   /*
+   * =====================================================
    * ERROR
+   * =====================================================
    */
+
   if (error || !order) {
     return (
-      <main className="screen error-screen">
+      <main className="screen center-screen">
         <div className="glow glow-one" />
         <div className="glow glow-two" />
 
         <div className="error-box">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Kakobuy"
+              className="error-logo"
+            />
+          ) : (
+            <div className="loading-brand">
+              KAKO<span>BUY</span>
+            </div>
+          )}
+
           <div className="error-icon">
             !
           </div>
@@ -1041,16 +1178,16 @@ export default function Page() {
 
           <p>
             {error ||
-              "We could not find this order."}
+              "Unable to load this order. Please return to the order page and try again."}
           </p>
 
           <button
             className="primary-button"
-            onClick={() => {
+            onClick={() =>
               window.location.replace(
                 CHECK_ORDER_URL
               )
-            }}
+            }
           >
             BACK TO ORDER PAGE
           </button>
@@ -1066,19 +1203,29 @@ export default function Page() {
         selectedMethod
     )
 
-  const progress =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        (timeLeft / 300) * 100
-      )
+  const qrImage =
+    paymentMethod?.qr_image_url ||
+    paymentMethod?.qr_image ||
+    ""
+
+  const progress = Math.max(
+    0,
+    Math.min(
+      100,
+      (timeLeft / 300) * 100
     )
+  )
 
   const isSubmitted =
     Boolean(
       order.transaction_submitted
     )
+
+  /*
+   * =====================================================
+   * MAIN PAGE
+   * =====================================================
+   */
 
   return (
     <main className="screen">
@@ -1090,9 +1237,17 @@ export default function Page() {
 
       <header className="top-header">
         <div className="brand">
-          <div className="brand-mark">
-            K
-          </div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Kakobuy"
+              className="header-logo"
+            />
+          ) : (
+            <div className="brand-mark">
+              K
+            </div>
+          )}
 
           <div>
             <div className="brand-name">
@@ -1107,11 +1262,11 @@ export default function Page() {
 
         <button
           className="back-button"
-          onClick={() => {
+          onClick={() =>
             window.location.replace(
               CHECK_ORDER_URL
             )
-          }}
+          }
         >
           ← ORDER
         </button>
@@ -1299,7 +1454,7 @@ export default function Page() {
                     </div>
                   )}
 
-                  {paymentMethod?.qr_image && (
+                  {qrImage && (
                     <div className="qr-section">
                       <div className="qr-title">
                         SCAN QR CODE
@@ -1311,9 +1466,7 @@ export default function Page() {
 
                       <div className="qr-box">
                         <img
-                          src={
-                            paymentMethod.qr_image
-                          }
+                          src={qrImage}
                           alt={`${currentMethod?.name} QR code`}
                         />
                       </div>
@@ -1332,13 +1485,13 @@ export default function Page() {
                       </span>
 
                       <button
+                        className="copy-button"
                         onClick={
                           copyInfo
                         }
                         disabled={
                           !paymentMethod?.wallet_address
                         }
-                        className="copy-button"
                       >
                         {copied
                           ? "COPIED ✓"
@@ -1533,7 +1686,7 @@ export default function Page() {
               ✓
             </div>
 
-            <div>
+            <div className="submitted-content">
               <div className="section-label">
                 PAYMENT SUBMITTED
               </div>
@@ -1615,7 +1768,7 @@ export default function Page() {
 
             <h2>
               {paymentStatus ===
-                "confirmed"
+              "confirmed"
                 ? "PAYMENT CONFIRMED"
                 : paymentStatus ===
                   "failed"
@@ -1625,7 +1778,7 @@ export default function Page() {
 
             <p>
               {paymentStatus ===
-                "confirmed"
+              "confirmed"
                 ? "Your payment has been confirmed by the admin."
                 : paymentStatus ===
                   "failed"
@@ -1688,6 +1841,12 @@ export default function Page() {
           padding-bottom: 50px;
         }
 
+        .center-screen {
+          display: grid;
+          place-items: center;
+          padding: 20px;
+        }
+
         .background-grid {
           position: fixed;
           inset: 0;
@@ -1744,13 +1903,11 @@ export default function Page() {
         @keyframes floatGlow {
           0%,
           100% {
-            transform: translateY(0)
-              scale(1);
+            transform: translateY(0) scale(1);
           }
 
           50% {
-            transform: translateY(-25px)
-              scale(1.1);
+            transform: translateY(-25px) scale(1.1);
           }
         }
 
@@ -1771,6 +1928,13 @@ export default function Page() {
           gap: 11px;
         }
 
+        .header-logo {
+          width: 48px;
+          height: 48px;
+          object-fit: contain;
+          border-radius: 12px;
+        }
+
         .brand-mark {
           width: 42px;
           height: 42px;
@@ -1778,13 +1942,7 @@ export default function Page() {
           display: grid;
           place-items: center;
           background: #e60032;
-          box-shadow:
-            0 0 25px rgba(
-              255,
-              0,
-              50,
-              0.55
-            );
+          box-shadow: 0 0 25px rgba(255, 0, 50, 0.55);
           font-weight: 900;
           font-size: 22px;
         }
@@ -1803,12 +1961,7 @@ export default function Page() {
 
         .back-button {
           border: 1px solid #292929;
-          background: rgba(
-            255,
-            255,
-            255,
-            0.04
-          );
+          background: rgba(255, 255, 255, 0.04);
           color: #fff;
           padding: 10px 15px;
           border-radius: 10px;
@@ -1840,18 +1993,13 @@ export default function Page() {
           height: 7px;
           border-radius: 50%;
           background: #ff1748;
-          box-shadow:
-            0 0 15px #ff1748;
+          box-shadow: 0 0 15px #ff1748;
           animation: pulse 1.5s infinite;
         }
 
         .hero-heading {
           max-width: 850px;
-          font-size: clamp(
-            35px,
-            7vw,
-            76px
-          );
+          font-size: clamp(35px, 7vw, 76px);
           line-height: 0.95;
           margin: 0;
           font-weight: 950;
@@ -1893,22 +2041,11 @@ export default function Page() {
         .upload-card,
         .submitted-card {
           border: 1px solid #242424;
-          background: rgba(
-            12,
-            12,
-            12,
-            0.88
-          );
+          background: rgba(12, 12, 12, 0.88);
           backdrop-filter: blur(15px);
           border-radius: 22px;
           margin-bottom: 18px;
-          box-shadow:
-            0 20px 70px rgba(
-              0,
-              0,
-              0,
-              0.25
-            );
+          box-shadow: 0 20px 70px rgba(0, 0, 0, 0.25);
         }
 
         .order-card {
@@ -2010,19 +2147,8 @@ export default function Page() {
         }
 
         .selected-method {
-          background: rgba(
-            255,
-            0,
-            50,
-            0.12
-          );
-          border: 1px solid
-            rgba(
-              255,
-              0,
-              50,
-              0.35
-            );
+          background: rgba(255, 0, 50, 0.12);
+          border: 1px solid rgba(255, 0, 50, 0.35);
           color: #ff4265;
           padding: 9px 12px;
           border-radius: 10px;
@@ -2044,10 +2170,7 @@ export default function Page() {
           background: #0c0c0c;
           color: #fff;
           cursor: pointer;
-          transition:
-            transform 0.25s,
-            border-color 0.25s,
-            box-shadow 0.25s;
+          transition: 0.25s;
           display: flex;
           flex-direction: column;
           justify-content: center;
@@ -2064,52 +2187,23 @@ export default function Page() {
           border-color: #ff1748;
           background: linear-gradient(
             145deg,
-            rgba(
-              255,
-              0,
-              55,
-              0.18
-            ),
+            rgba(255, 0, 55, 0.18),
             #0d0d0d
           );
           box-shadow:
-            0 0 25px rgba(
-              255,
-              0,
-              50,
-              0.25
-            ),
-            inset 0 0 20px rgba(
-              255,
-              0,
-              50,
-              0.06
-            );
+            0 0 25px rgba(255, 0, 50, 0.25),
+            inset 0 0 20px rgba(255, 0, 50, 0.06);
           animation: selectedPulse 2s infinite;
         }
 
         @keyframes selectedPulse {
           0%,
           100% {
-            box-shadow:
-              0 0 20px
-                rgba(
-                  255,
-                  0,
-                  50,
-                  0.18
-                );
+            box-shadow: 0 0 20px rgba(255, 0, 50, 0.18);
           }
 
           50% {
-            box-shadow:
-              0 0 35px
-                rgba(
-                  255,
-                  0,
-                  50,
-                  0.38
-                );
+            box-shadow: 0 0 35px rgba(255, 0, 50, 0.38);
           }
         }
 
@@ -2153,13 +2247,7 @@ export default function Page() {
           display: grid;
           place-items: center;
           background: #e90038;
-          box-shadow:
-            0 0 25px rgba(
-              255,
-              0,
-              50,
-              0.3
-            );
+          box-shadow: 0 0 25px rgba(255, 0, 50, 0.3);
           font-weight: 900;
           font-size: 20px;
         }
@@ -2251,19 +2339,8 @@ export default function Page() {
 
         .amount-box {
           margin-top: 18px;
-          border: 1px solid
-            rgba(
-              255,
-              0,
-              50,
-              0.25
-            );
-          background: rgba(
-            255,
-            0,
-            50,
-            0.07
-          );
+          border: 1px solid rgba(255, 0, 50, 0.25);
+          background: rgba(255, 0, 50, 0.07);
           border-radius: 15px;
           padding: 16px;
           display: flex;
@@ -2294,32 +2371,8 @@ export default function Page() {
           background: #ed003b;
           color: #fff;
           font-weight: 950;
-          letter-spacing: 0.5px;
           cursor: pointer;
-          box-shadow:
-            0 10px 30px rgba(
-              237,
-              0,
-              59,
-              0.2
-            );
-          transition:
-            transform 0.2s,
-            box-shadow 0.2s;
-        }
-
-        .pay-button:hover,
-        .submit-button:hover,
-        .status-button:hover,
-        .refresh-status:hover {
-          transform: translateY(-2px);
-          box-shadow:
-            0 15px 35px rgba(
-              237,
-              0,
-              59,
-              0.35
-            );
+          box-shadow: 0 10px 30px rgba(237, 0, 59, 0.2);
         }
 
         .pay-button:disabled,
@@ -2327,7 +2380,6 @@ export default function Page() {
         .refresh-status:disabled {
           opacity: 0.45;
           cursor: not-allowed;
-          transform: none;
         }
 
         .active-payment {
@@ -2347,8 +2399,7 @@ export default function Page() {
           height: 7px;
           border-radius: 50%;
           background: #ff1748;
-          box-shadow:
-            0 0 12px #ff1748;
+          box-shadow: 0 0 12px #ff1748;
           animation: pulse 1s infinite;
         }
 
@@ -2360,29 +2411,12 @@ export default function Page() {
 
         .timer-card {
           padding: 23px;
-          border-color:
-            rgba(
-              255,
-              0,
-              50,
-              0.3
-            );
-          background:
-            linear-gradient(
-              145deg,
-              rgba(
-                255,
-                0,
-                50,
-                0.08
-              ),
-              rgba(
-                10,
-                10,
-                10,
-                0.95
-              )
-            );
+          border-color: rgba(255, 0, 50, 0.3);
+          background: linear-gradient(
+            145deg,
+            rgba(255, 0, 50, 0.08),
+            rgba(10, 10, 10, 0.95)
+          );
         }
 
         .timer-top {
@@ -2428,20 +2462,13 @@ export default function Page() {
           height: 100%;
           background: #ed003b;
           border-radius: inherit;
-          box-shadow:
-            0 0 15px rgba(
-              255,
-              0,
-              50,
-              0.7
-            );
+          box-shadow: 0 0 15px rgba(255, 0, 50, 0.7);
           transition: width 1s linear;
         }
 
         .timer-note {
           color: #777;
           font-size: 11px;
-          margin-bottom: 0;
           line-height: 1.6;
         }
 
@@ -2514,19 +2541,8 @@ export default function Page() {
           padding: 14px;
           margin-top: 15px;
           border-radius: 13px;
-          background: rgba(
-            0,
-            200,
-            100,
-            0.07
-          );
-          border: 1px solid
-            rgba(
-              0,
-              200,
-              100,
-              0.2
-            );
+          background: rgba(0, 200, 100, 0.07);
+          border: 1px solid rgba(0, 200, 100, 0.2);
         }
 
         .upload-success > span {
@@ -2550,28 +2566,23 @@ export default function Page() {
           font-size: 10px;
         }
 
-        .upload-error {
-          margin-top: 12px;
-          padding: 12px;
-          border-radius: 10px;
-          background: rgba(
-            255,
-            0,
-            50,
-            0.08
-          );
-          color: #ff5575;
-          font-size: 12px;
-        }
-
+        .upload-error,
         .submission-message {
           margin-top: 13px;
           padding: 13px;
           border-radius: 11px;
-          background: #111;
-          color: #aaa;
           font-size: 12px;
           line-height: 1.5;
+        }
+
+        .upload-error {
+          background: rgba(255, 0, 50, 0.08);
+          color: #ff5575;
+        }
+
+        .submission-message {
+          background: #111;
+          color: #aaa;
         }
 
         .submitted-card {
@@ -2585,13 +2596,16 @@ export default function Page() {
         .submitted-icon {
           width: 55px;
           height: 55px;
-          flex-shrink: 0;
           border-radius: 17px;
           display: grid;
           place-items: center;
           background: #e90038;
           font-size: 25px;
           font-weight: 900;
+        }
+
+        .submitted-content {
+          flex: 1;
         }
 
         .submitted-card h2 {
@@ -2603,13 +2617,11 @@ export default function Page() {
           font-size: 12px;
           line-height: 1.6;
           margin: 0;
-          max-width: 600px;
         }
 
         .submitted-card .status-button {
           width: auto;
           min-width: 190px;
-          margin-left: auto;
           margin-top: 0;
         }
 
@@ -2629,12 +2641,7 @@ export default function Page() {
           position: fixed;
           z-index: 100;
           inset: 0;
-          background: rgba(
-            0,
-            0,
-            0,
-            0.78
-          );
+          background: rgba(0, 0, 0, 0.78);
           backdrop-filter: blur(12px);
           display: grid;
           place-items: center;
@@ -2643,22 +2650,12 @@ export default function Page() {
 
         .status-popup {
           position: relative;
-          width: min(
-            430px,
-            100%
-          );
+          width: min(430px, 100%);
           padding: 35px 25px 25px;
           border: 1px solid #292929;
           background: #0b0b0b;
           border-radius: 25px;
           text-align: center;
-          box-shadow:
-            0 30px 100px rgba(
-              0,
-              0,
-              0,
-              0.6
-            );
         }
 
         .close-popup {
@@ -2749,36 +2746,55 @@ export default function Page() {
           letter-spacing: 1px;
         }
 
-        .refresh-status {
-          margin-top: 20px;
+        .loading-box,
+        .error-box {
+          position: relative;
+          z-index: 2;
+          width: min(430px, 100%);
+          padding: 35px 25px;
+          border: 1px solid #242424;
+          background: #0b0b0b;
+          border-radius: 22px;
+          text-align: center;
         }
 
-        .payment-loading {
-          min-height: 250px;
-          display: grid;
-          place-items: center;
-          color: #777;
-          font-size: 13px;
+        .loading-logo,
+        .error-logo {
+          width: 95px;
+          height: 95px;
+          object-fit: contain;
+          border-radius: 18px;
+          margin-bottom: 18px;
         }
 
-        .small-spinner,
-        .spinner {
+        .loading-brand {
+          font-size: 32px;
+          font-weight: 950;
+          letter-spacing: -2px;
+          margin-bottom: 20px;
+        }
+
+        .loading-brand span {
+          color: #ff3159;
+        }
+
+        .spinner,
+        .small-spinner {
           border: 3px solid #282828;
           border-top-color: #ff1748;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
+          margin: auto;
+        }
+
+        .spinner {
+          width: 45px;
+          height: 45px;
         }
 
         .small-spinner {
           width: 25px;
           height: 25px;
-          margin: auto auto 10px;
-        }
-
-        .spinner {
-          width: 48px;
-          height: 48px;
-          margin: auto;
         }
 
         @keyframes spin {
@@ -2787,33 +2803,11 @@ export default function Page() {
           }
         }
 
-        .loading-screen,
-        .error-screen {
-          display: grid;
-          place-items: center;
-          padding: 20px;
-        }
-
-        .loader-box,
-        .error-box {
-          position: relative;
-          z-index: 2;
-          width: min(
-            450px,
-            100%
-          );
-          text-align: center;
-          padding: 35px 25px;
-          border: 1px solid #242424;
-          background: #0b0b0b;
-          border-radius: 22px;
-        }
-
-        .loader-box h2 {
+        .loading-box h2 {
           margin-bottom: 5px;
         }
 
-        .loader-box p,
+        .loading-box p,
         .error-box p {
           color: #777;
           font-size: 13px;
@@ -2843,6 +2837,15 @@ export default function Page() {
           color: white;
           font-weight: 900;
           cursor: pointer;
+        }
+
+        .payment-loading {
+          min-height: 250px;
+          display: grid;
+          place-items: center;
+          color: #777;
+          font-size: 13px;
+          text-align: center;
         }
 
         @media (max-width: 700px) {
@@ -2911,6 +2914,11 @@ export default function Page() {
           .timer {
             width: 100%;
             text-align: left;
+          }
+
+          .header-logo {
+            width: 42px;
+            height: 42px;
           }
         }
       `}</style>
