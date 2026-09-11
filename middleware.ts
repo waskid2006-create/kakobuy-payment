@@ -3,13 +3,18 @@ import { NextRequest, NextResponse } from "next/server"
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  // Allow the admin page to load.
-  // The admin page itself checks the login cookie.
+  // Never redirect the admin login page.
+  if (pathname === "/admin/login") {
+    return NextResponse.next()
+  }
+
+  // Allow the admin dashboard to load.
+  // The dashboard itself will check authentication.
   if (pathname.startsWith("/admin")) {
     return NextResponse.next()
   }
 
-  // Protect payment-method changes.
+  // Only protect ADMIN changes to payment methods.
   if (
     pathname === "/api/payment-methods" &&
     request.method === "PUT"
