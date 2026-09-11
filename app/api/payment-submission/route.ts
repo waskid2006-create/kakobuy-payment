@@ -1,10 +1,7 @@
-/* ==================== 1. IMPORT DATABASE ==================== */
 import { sql } from "@/app/db"
 
-/* ==================== 2. POST PAYMENT SUBMISSION ==================== */
 export async function POST(request: Request) {
   try {
-    /* ==================== 3. READ REQUEST ==================== */
     const body = await request.json()
 
     const orderId = String(
@@ -15,7 +12,6 @@ export async function POST(request: Request) {
       body?.email || ""
     ).trim()
 
-    /* ==================== 4. CHECK ORDER ID ==================== */
     if (!orderId) {
       return Response.json(
         {
@@ -26,7 +22,6 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 5. FIND ORDER ==================== */
     const existingOrder = email
       ? await sql`
           SELECT
@@ -41,7 +36,8 @@ export async function POST(request: Request) {
             transaction_submitted_at
           FROM orders
           WHERE id = ${orderId}
-          AND email = ${email}
+            AND LOWER(TRIM(email)) =
+                LOWER(TRIM(${email}))
           LIMIT 1
         `
       : await sql`
@@ -60,7 +56,6 @@ export async function POST(request: Request) {
           LIMIT 1
         `
 
-    /* ==================== 6. ORDER NOT FOUND ==================== */
     if (existingOrder.length === 0) {
       return Response.json(
         {
@@ -71,12 +66,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const currentOrder = existingOrder[0]
+    const currentOrder =
+      existingOrder[0]
 
-    /* ==================== 7. CHECK SCREENSHOT ==================== */
-    if (
-      !currentOrder.transaction_image
-    ) {
+    if (!currentOrder.transaction_image) {
       return Response.json(
         {
           success: false,
@@ -87,21 +80,19 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 8. MARK SUBMITTED ==================== */
     const result = email
       ? await sql`
           UPDATE orders
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-            payment_status = COALESCE(
-              payment_status,
-              'pending'
-            ),
+            payment_status =
+              COALESCE(payment_status, 'pending'),
             updated_at = NOW()
           WHERE id = ${orderId}
-          AND email = ${email}
-          AND transaction_image IS NOT NULL
+            AND LOWER(TRIM(email)) =
+                LOWER(TRIM(${email}))
+            AND transaction_image IS NOT NULL
           RETURNING
             id,
             full_name,
@@ -120,13 +111,11 @@ export async function POST(request: Request) {
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-            payment_status = COALESCE(
-              payment_status,
-              'pending'
-            ),
+            payment_status =
+              COALESCE(payment_status, 'pending'),
             updated_at = NOW()
           WHERE id = ${orderId}
-          AND transaction_image IS NOT NULL
+            AND transaction_image IS NOT NULL
           RETURNING
             id,
             full_name,
@@ -141,7 +130,6 @@ export async function POST(request: Request) {
             updated_at
         `
 
-    /* ==================== 9. CHECK UPDATE ==================== */
     if (result.length === 0) {
       return Response.json(
         {
@@ -153,7 +141,6 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 10. SUCCESS ==================== */
     return Response.json({
       success: true,
       submitted: true,
@@ -162,7 +149,6 @@ export async function POST(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    /* ==================== 11. ERROR ==================== */
     console.error(
       "Payment submission error:",
       error
