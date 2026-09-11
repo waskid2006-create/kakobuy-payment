@@ -2,26 +2,53 @@ import { NextRequest, NextResponse } from "next/server"
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const method = request.method
 
-  // Never redirect the admin login page.
-  if (pathname === "/admin/login") {
+  // --------------------------------------------------
+  // ADMIN PAGES
+  // --------------------------------------------------
+  // DO NOT redirect /admin to /admin/login here.
+  // The admin page itself checks the login cookie.
+  if (
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/")
+  ) {
     return NextResponse.next()
   }
 
-  // Allow the admin dashboard to load.
-  // The dashboard itself will check authentication.
-  if (pathname.startsWith("/admin")) {
+  // --------------------------------------------------
+  // ADMIN AUTH ROUTES
+  // --------------------------------------------------
+
+  if (
+    pathname === "/api/admin-login" ||
+    pathname === "/api/admin-check" ||
+    pathname === "/api/admin-logout"
+  ) {
     return NextResponse.next()
   }
 
-  // Only protect ADMIN changes to payment methods.
+  // --------------------------------------------------
+  // PAYMENT METHODS
+  // --------------------------------------------------
+  // GET is PUBLIC because Page 3 needs to read
+  // payment methods.
+  //
+  // ONLY PUT is protected because only the admin
+  // should be allowed to change payment methods.
+  // --------------------------------------------------
+
   if (
     pathname === "/api/payment-methods" &&
-    request.method === "PUT"
+    method === "PUT"
   ) {
-    const adminCookie = request.cookies.get("kakobuy_admin")
+    const adminCookie =
+      request.cookies.get("kakobuy_admin")
 
-    if (adminCookie?.value !== "authenticated") {
+    if (
+      !adminCookie ||
+      adminCookie.value !== "authenticated"
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -32,12 +59,16 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  // Everything else continues normally.
   return NextResponse.next()
 }
 
 export const config = {
   matcher: [
     "/admin/:path*",
+    "/api/admin-login",
+    "/api/admin-check",
+    "/api/admin-logout",
     "/api/payment-methods",
   ],
 }
