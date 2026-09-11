@@ -11,11 +11,9 @@ const ALLOWED_TYPES = [
 
 export async function POST(request: Request) {
   try {
-    const form =
-      await request.formData()
+    const form = await request.formData()
 
-    const file =
-      form.get("file")
+    const file = form.get("file")
 
     const orderId = String(
       form.get("orderId") || ""
@@ -39,8 +37,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error:
-            "Please select a payment screenshot.",
+          error: "Please select a payment screenshot.",
         },
         { status: 400 }
       )
@@ -50,8 +47,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error:
-            "Only JPG, PNG, and WEBP images are allowed.",
+          error: "Only JPG, PNG, and WEBP images are allowed.",
         },
         { status: 400 }
       )
@@ -61,8 +57,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error:
-            "The selected image is empty.",
+          error: "The selected image is empty.",
         },
         { status: 400 }
       )
@@ -72,8 +67,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error:
-            "Image must be smaller than 5 MB.",
+          error: "Image must be smaller than 5 MB.",
         },
         { status: 400 }
       )
@@ -81,9 +75,7 @@ export async function POST(request: Request) {
 
     const orderCheck = email
       ? await sql`
-          SELECT
-            id,
-            email
+          SELECT id, email
           FROM orders
           WHERE id = ${orderId}
             AND LOWER(TRIM(email)) =
@@ -91,9 +83,7 @@ export async function POST(request: Request) {
           LIMIT 1
         `
       : await sql`
-          SELECT
-            id,
-            email
+          SELECT id, email
           FROM orders
           WHERE id = ${orderId}
           LIMIT 1
@@ -119,12 +109,25 @@ export async function POST(request: Request) {
     const filename =
       `transactions/${orderId}-${Date.now()}.${extension}`
 
+    const storeId = process.env.BLOB_STORE_ID
+
+    if (!storeId) {
+      return Response.json(
+        {
+          success: false,
+          error: "Blob store is not configured.",
+        },
+        { status: 500 }
+      )
+    }
+
     const blob = await put(
       filename,
       file,
       {
         access: "public",
         addRandomSuffix: true,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
       }
     )
 
@@ -132,8 +135,7 @@ export async function POST(request: Request) {
       ? await sql`
           UPDATE orders
           SET
-            transaction_image =
-              ${blob.url},
+            transaction_image = ${blob.url},
             transaction_submitted = false,
             transaction_submitted_at = NULL,
             updated_at = NOW()
@@ -155,8 +157,7 @@ export async function POST(request: Request) {
       : await sql`
           UPDATE orders
           SET
-            transaction_image =
-              ${blob.url},
+            transaction_image = ${blob.url},
             transaction_submitted = false,
             transaction_submitted_at = NULL,
             updated_at = NOW()
@@ -189,11 +190,9 @@ export async function POST(request: Request) {
       success: true,
       uploaded: true,
       confirmed: true,
-      message:
-        "Transaction screenshot uploaded successfully.",
+      message: "Transaction screenshot uploaded successfully.",
       image: blob.url,
-      transaction_image:
-        blob.url,
+      transaction_image: blob.url,
       order: updated[0],
     })
   } catch (error) {
