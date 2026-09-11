@@ -3,26 +3,10 @@
 import { useEffect, useState } from "react"
 
 const methods = [
-  {
-    id: "bitcoin",
-    name: "Bitcoin",
-    symbol: "₿",
-  },
-  {
-    id: "ethereum",
-    name: "Ethereum",
-    symbol: "Ξ",
-  },
-  {
-    id: "tron",
-    name: "TRON",
-    symbol: "TRX",
-  },
-  {
-    id: "binance",
-    name: "Binance",
-    symbol: "BNB",
-  },
+  { id: "bitcoin", name: "Bitcoin", symbol: "₿" },
+  { id: "ethereum", name: "Ethereum", symbol: "Ξ" },
+  { id: "tron", name: "TRON", symbol: "TRX" },
+  { id: "binance", name: "Binance", symbol: "BNB" },
 ]
 
 const CHECK_ORDER_URL =
@@ -54,7 +38,7 @@ type Order = {
   items?: OrderItem[]
   total: number | string
   payment_method?: string
-  payment_status?: "pending" | "confirmed" | "failed"
+  payment_status?: string
   wallet_copied?: boolean
   transaction_image?: string | null
   transaction_submitted?: boolean
@@ -84,6 +68,11 @@ type PageDetails = {
   method: string
 }
 
+type PaymentStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
+
 export default function PaymentPage() {
   const [order, setOrder] =
     useState<Order | null>(null)
@@ -106,8 +95,9 @@ export default function PaymentPage() {
   const [paymentVisible, setPaymentVisible] =
     useState(false)
 
+  // 60 SECOND PAYMENT WINDOW
   const [timeLeft, setTimeLeft] =
-    useState(300)
+    useState(60)
 
   const [copied, setCopied] =
     useState(false)
@@ -132,6 +122,15 @@ export default function PaymentPage() {
 
   const [uploadError, setUploadError] =
     useState("")
+
+  const [statusOpen, setStatusOpen] =
+    useState(false)
+
+  const [paymentStatus, setPaymentStatus] =
+    useState<PaymentStatus>("pending")
+
+  const [statusLoading, setStatusLoading] =
+    useState(false)
 
   const [details, setDetails] =
     useState<PageDetails>({
@@ -177,13 +176,12 @@ export default function PaymentPage() {
       method,
     })
 
-    /*
-     * Only use a method from the URL if one was
-     * deliberately supplied.
-     *
-     * Otherwise the buyer must choose.
-     */
-    if (method && methods.some((item) => item.id === method)) {
+    if (
+      method &&
+      methods.some(
+        (item) => item.id === method
+      )
+    ) {
       setSelectedMethod(method)
     }
   }, [])
@@ -196,8 +194,6 @@ export default function PaymentPage() {
     }
 
     try {
-      setError("")
-
       const params =
         new URLSearchParams()
 
@@ -255,7 +251,9 @@ export default function PaymentPage() {
 
   /* ==================== LOAD PAYMENT METHOD ==================== */
 
-  async function loadPaymentMethod(methodId: string) {
+  async function loadPaymentMethod(
+    methodId: string
+  ) {
     if (!methodId) {
       return
     }
@@ -319,9 +317,6 @@ export default function PaymentPage() {
     }
   }
 
-  /*
-   * Load order after URL details are available.
-   */
   useEffect(() => {
     if (!details.orderId) {
       return
@@ -333,10 +328,6 @@ export default function PaymentPage() {
     details.email,
   ])
 
-  /*
-   * Load selected payment method only after
-   * the buyer chooses one.
-   */
   useEffect(() => {
     if (!selectedMethod) {
       setPaymentMethod(null)
@@ -347,10 +338,6 @@ export default function PaymentPage() {
     loadPaymentMethod(selectedMethod)
   }, [selectedMethod])
 
-  /*
-   * If there is genuinely no order ID after the
-   * browser URL has been read, show the error.
-   */
   useEffect(() => {
     if (
       details.orderId === "" &&
@@ -359,14 +346,15 @@ export default function PaymentPage() {
       const hasQuery =
         window.location.search.length > 0
 
+      const params =
+        new URLSearchParams(
+          window.location.search
+        )
+
       if (
         hasQuery &&
-        !new URLSearchParams(
-          window.location.search
-        ).get("orderId") &&
-        !new URLSearchParams(
-          window.location.search
-        ).get("id")
+        !params.get("orderId") &&
+        !params.get("id")
       ) {
         setLoading(false)
         setError("Missing order ID.")
@@ -395,7 +383,7 @@ export default function PaymentPage() {
     details.email,
   ])
 
-  /* ==================== FIVE MINUTE TIMER ==================== */
+  /* ==================== 60 SECOND TIMER ==================== */
 
   useEffect(() => {
     if (!paymentVisible) {
@@ -432,6 +420,123 @@ export default function PaymentPage() {
   }, [
     paymentVisible,
     timeLeft,
+  ])
+
+  /* ==================== STATUS ==================== */
+
+  function normalizeStatus(
+    status?: string
+  ): PaymentStatus {
+    if (status === "confirmed") {
+      return "confirmed"
+    }
+
+    if (status === "failed") {
+      return "failed"
+    }
+
+    return "pending"
+  }
+
+  async function loadPaymentStatus(
+    showLoading = true
+  ) {
+    if (!details.orderId) {
+      return
+    }
+
+    if (showLoading) {
+      setStatusLoading(true)
+    }
+
+    try {
+      const params =
+        new URLSearchParams()
+
+      params.set(
+        "orderId",
+        details.orderId
+      )
+
+      if (details.email) {
+        params.set(
+          "email",
+          details.email
+        )
+      }
+
+      const response =
+        await fetch(
+          `/api/payment-status?${params.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        )
+
+      const data =
+        await response.json()
+
+      if (
+        !response.ok ||
+        !data?.success
+      ) {
+        throw new Error(
+          data?.error ||
+            "Unable to check payment status."
+        )
+      }
+
+      const status =
+        normalizeStatus(
+          data?.order?.payment_status
+        )
+
+      setPaymentStatus(status)
+
+      setOrder(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                payment_status:
+                  status,
+              }
+            : previous
+      )
+    } catch (err) {
+      console.error(
+        "Payment status error:",
+        err
+      )
+    } finally {
+      if (showLoading) {
+        setStatusLoading(false)
+      }
+    }
+  }
+
+  /* ==================== STATUS POLLING ==================== */
+
+  useEffect(() => {
+    if (!order?.transaction_submitted) {
+      return
+    }
+
+    loadPaymentStatus(false)
+
+    const interval =
+      window.setInterval(() => {
+        loadPaymentStatus(false)
+      }, 3000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [
+    order?.transaction_submitted,
+    details.orderId,
+    details.email,
   ])
 
   /* ==================== FORMAT TIMER ==================== */
@@ -487,11 +592,13 @@ export default function PaymentPage() {
 
   /* ==================== SELECT METHOD ==================== */
 
-  function chooseMethod(methodId: string) {
+  function chooseMethod(
+    methodId: string
+  ) {
     setSelectedMethod(methodId)
 
     setPaymentVisible(false)
-    setTimeLeft(300)
+    setTimeLeft(60)
     setCopied(false)
     setUploadError("")
     setSubmissionMessage("")
@@ -499,7 +606,9 @@ export default function PaymentPage() {
 
     if (
       transactionPreview &&
-      transactionPreview.startsWith("blob:")
+      transactionPreview.startsWith(
+        "blob:"
+      )
     ) {
       URL.revokeObjectURL(
         transactionPreview
@@ -540,8 +649,12 @@ export default function PaymentPage() {
       )
 
       setCopied(true)
+
+      // IMPORTANT:
+      // TIMER STARTS HERE — ONLY AFTER COPY
       setPaymentVisible(true)
-      setTimeLeft(300)
+      setTimeLeft(60)
+
       setUploadError("")
 
       await fetch(
@@ -748,7 +861,7 @@ export default function PaymentPage() {
       )
 
       setSubmissionMessage(
-        "Screenshot uploaded and confirmed. Tap CONFIRM PAYMENT to send it to admin."
+        "Screenshot uploaded successfully. Tap CONFIRM PAYMENT to send it to admin."
       )
     } catch (err) {
       console.error(
@@ -822,6 +935,8 @@ export default function PaymentPage() {
                 order.email ||
                 details.email ||
                 "",
+              paymentMethod:
+                selectedMethod,
             }),
           }
         )
@@ -856,6 +971,8 @@ export default function PaymentPage() {
                 ...previous,
                 payment_method:
                   selectedMethod,
+                payment_status:
+                  "pending",
                 transaction_submitted:
                   true,
                 transaction_submitted_at:
@@ -864,6 +981,10 @@ export default function PaymentPage() {
                   new Date().toISOString(),
               }
             : previous
+      )
+
+      setPaymentStatus(
+        "pending"
       )
 
       setSubmissionMessage(
@@ -889,6 +1010,7 @@ export default function PaymentPage() {
       setTransactionUploaded(false)
 
       await loadOrder()
+      await loadPaymentStatus(false)
     } catch (err) {
       console.error(
         "Payment submission error:",
@@ -929,6 +1051,10 @@ export default function PaymentPage() {
       <main className="payment-page">
         <div className="payment-container">
           <div className="loading-card">
+            <div className="loading-orb">
+              K
+            </div>
+
             <h2>
               LOADING ORDER...
             </h2>
@@ -939,6 +1065,61 @@ export default function PaymentPage() {
             </p>
           </div>
         </div>
+
+        <style jsx>{`
+          .payment-page {
+            min-height: 100vh;
+            background: #080808;
+            color: #fff;
+            display: grid;
+            place-items: center;
+            padding: 20px;
+            font-family: system-ui, sans-serif;
+          }
+
+          .payment-container {
+            width: 100%;
+            max-width: 680px;
+          }
+
+          .loading-card {
+            text-align: center;
+            padding: 45px 20px;
+            border: 1px solid #292929;
+            border-radius: 20px;
+            background: #101010;
+          }
+
+          .loading-orb {
+            width: 58px;
+            height: 58px;
+            margin: 0 auto 18px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            background: #ff3030;
+            box-shadow: 0 0 45px rgba(255, 48, 48, .35);
+            font-size: 24px;
+            font-weight: 950;
+            animation: pulse 1.4s infinite;
+          }
+
+          h2 {
+            font-size: 15px;
+          }
+
+          p {
+            color: #777;
+            font-size: 11px;
+          }
+
+          @keyframes pulse {
+            50% {
+              transform: scale(.85);
+              opacity: .65;
+            }
+          }
+        `}</style>
       </main>
     )
   }
@@ -950,6 +1131,10 @@ export default function PaymentPage() {
       <main className="payment-page">
         <div className="payment-container">
           <div className="error-card">
+            <div className="error-icon">
+              !
+            </div>
+
             <h2>
               WE COULDN'T LOAD THIS ORDER
             </h2>
@@ -969,18 +1154,84 @@ export default function PaymentPage() {
             </button>
           </div>
         </div>
+
+        <style jsx>{`
+          .payment-page {
+            min-height: 100vh;
+            background: #080808;
+            color: #fff;
+            display: grid;
+            place-items: center;
+            padding: 20px;
+            font-family: system-ui, sans-serif;
+          }
+
+          .payment-container {
+            width: 100%;
+            max-width: 680px;
+          }
+
+          .error-card {
+            text-align: center;
+            padding: 35px 20px;
+            border: 1px solid #292929;
+            border-radius: 20px;
+            background: #101010;
+          }
+
+          .error-icon {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 15px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            background: rgba(255, 48, 48, .1);
+            color: #ff4444;
+            font-size: 22px;
+            font-weight: 900;
+          }
+
+          h2 {
+            font-size: 15px;
+          }
+
+          p {
+            color: #777;
+            font-size: 11px;
+            line-height: 1.5;
+          }
+
+          button {
+            margin-top: 10px;
+            min-height: 44px;
+            padding: 0 20px;
+            border: 0;
+            border-radius: 9px;
+            background: #ff3030;
+            color: #fff;
+            font-weight: 900;
+          }
+        `}</style>
       </main>
     )
   }
 
   return (
     <main className="payment-page">
+      <div className="background-orb orb-one" />
+      <div className="background-orb orb-two" />
+
       <div className="payment-container">
 
         {/* ==================== HEADER ==================== */}
 
         <header className="payment-header">
           <div>
+            <div className="brand">
+              KAKO<span>BUY</span>
+            </div>
+
             <h1>
               {selectedMethod &&
               paymentMethod?.hero_heading
@@ -1034,8 +1285,6 @@ export default function PaymentPage() {
               "Customer"}
           </div>
 
-          {/* ==================== ITEMS ==================== */}
-
           <div className="items-section">
             <p className="section-label">
               ITEMS YOU ARE BUYING
@@ -1083,35 +1332,27 @@ export default function PaymentPage() {
                             {item.size && (
                               <span>
                                 Size:{" "}
-                                {
-                                  item.size
-                                }
+                                {item.size}
                               </span>
                             )}
 
                             {item.style && (
                               <span>
                                 Style:{" "}
-                                {
-                                  item.style
-                                }
+                                {item.style}
                               </span>
                             )}
 
                             {item.color && (
                               <span>
                                 Color:{" "}
-                                {
-                                  item.color
-                                }
+                                {item.color}
                               </span>
                             )}
 
                             <span>
                               Qty:{" "}
-                              {
-                                quantity
-                              }
+                              {quantity}
                             </span>
                           </div>
                         </div>
@@ -1172,44 +1413,42 @@ export default function PaymentPage() {
             )}
           </div>
 
-          <p className="method-warning">
-            !
-          </p>
+          <div className="warning-box">
+            <span>!</span>
 
-          <p className="warning-text">
-            Please make sure you select the
-            correct payment method before
-            continuing.
-          </p>
+            <p>
+              Please make sure you select
+              the correct payment method
+              before continuing.
+            </p>
+          </div>
         </section>
 
-        {/* ==================== SELECTED PAYMENT INFORMATION ==================== */}
+        {/* ==================== PAYMENT INFORMATION ==================== */}
 
         {selectedMethod && (
           <>
             {paymentMethodLoading ? (
-              <section className="payment-card">
-                <p>
-                  Loading payment details...
-                </p>
+              <section className="payment-card loading-payment">
+                Loading payment details...
               </section>
             ) : (
-              <section className="payment-card">
+              <section className="payment-card payment-details-card">
                 <div className="payment-card-title">
                   <span>
-                    {
-                      currentMethod?.symbol
-                    }
+                    {currentMethod?.symbol}
                   </span>
 
                   <div>
+                    <p className="mini-label">
+                      PAYMENT METHOD
+                    </p>
+
                     <h2>
-                      {
-                        currentMethod?.name
-                      }
+                      {currentMethod?.name}
                     </h2>
 
-                    <p>
+                    <p className="payment-info">
                       {paymentMethod?.information ||
                         "Send the exact amount to the wallet below."}
                     </p>
@@ -1217,11 +1456,21 @@ export default function PaymentPage() {
                 </div>
 
                 {qrImage && (
-                  <div className="qr-wrapper">
-                    <img
-                      src={qrImage}
-                      alt={`${currentMethod?.name} QR code`}
-                    />
+                  <div className="qr-area">
+                    <div className="qr-title">
+                      QR CODE
+                    </div>
+
+                    <div className="qr-wrapper">
+                      <img
+                        src={qrImage}
+                        alt={`${currentMethod?.name} QR code`}
+                      />
+                    </div>
+
+                    <p>
+                      Scan to make payment
+                    </p>
                   </div>
                 )}
 
@@ -1238,9 +1487,7 @@ export default function PaymentPage() {
 
                     <button
                       type="button"
-                      onClick={
-                        copyInfo
-                      }
+                      onClick={copyInfo}
                       disabled={
                         !walletAddress
                       }
@@ -1258,9 +1505,7 @@ export default function PaymentPage() {
                   </span>
 
                   <strong>
-                    {orderTotal.toFixed(
-                      2
-                    )}
+                    {orderTotal.toFixed(2)}
                   </strong>
                 </div>
 
@@ -1269,9 +1514,7 @@ export default function PaymentPage() {
                     <button
                       type="button"
                       className="pay-button"
-                      onClick={
-                        copyInfo
-                      }
+                      onClick={copyInfo}
                       disabled={
                         !walletAddress
                       }
@@ -1288,19 +1531,47 @@ export default function PaymentPage() {
 
         {paymentVisible &&
           !order.transaction_submitted && (
-            <section className="timer-card">
-              <span>
-                PAYMENT WINDOW
-              </span>
+            <section
+              className={`timer-card ${
+                timeLeft <= 10
+                  ? "danger"
+                  : ""
+              }`}
+            >
+              <div className="timer-top">
+                <span>
+                  PAYMENT WINDOW
+                </span>
+
+                <span>
+                  60 SECONDS
+                </span>
+              </div>
 
               <strong>
                 {timerText}
               </strong>
 
               <p>
-                Complete your payment before
-                the timer reaches zero.
+                The countdown started when
+                you copied the wallet address.
               </p>
+
+              <div className="timer-bar">
+                <div
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (timeLeft /
+                          60) *
+                          100
+                      )
+                    )}%`,
+                  }}
+                />
+              </div>
             </section>
           )}
 
@@ -1335,11 +1606,13 @@ export default function PaymentPage() {
               )}
 
               <label className="upload-button">
-                {uploading
-                  ? "UPLOADING..."
-                  : transactionUploaded
-                  ? "CONFIRMED ✓"
-                  : "UPLOAD IMAGE"}
+                <span>
+                  {uploading
+                    ? "UPLOADING..."
+                    : transactionUploaded
+                    ? "CONFIRMED ✓"
+                    : "UPLOAD IMAGE"}
+                </span>
 
                 <input
                   type="file"
@@ -1395,21 +1668,135 @@ export default function PaymentPage() {
               ✓
             </div>
 
+            <p className="section-label">
+              PAYMENT SUBMISSION
+            </p>
+
             <h2>
-              PAYMENT SUBMITTED
+              PAYMENT SENT TO ADMIN
             </h2>
 
             <p>
               Your transaction screenshot
-              has been sent to the Kakobuy
-              admin for review.
+              has been sent to Kakobuy for
+              payment verification.
             </p>
 
             <div className="submitted-order">
-              Order #
+              ORDER #
               {String(order.id)}
             </div>
+
+            {/* PAYMENT STATUS BUTTON */}
+            <button
+              type="button"
+              className="status-button"
+              onClick={async () => {
+                setStatusOpen(true)
+                await loadPaymentStatus(
+                  true
+                )
+              }}
+            >
+              {statusLoading
+                ? "CHECKING STATUS..."
+                : "PAYMENT STATUS"}
+            </button>
           </section>
+        )}
+
+        {/* ==================== STATUS POPUP ==================== */}
+
+        {statusOpen && (
+          <div
+            className="status-overlay"
+            onClick={() =>
+              setStatusOpen(false)
+            }
+          >
+            <div
+              className="status-popup"
+              onClick={(event) =>
+                event.stopPropagation()
+              }
+            >
+              <button
+                className="status-close"
+                onClick={() =>
+                  setStatusOpen(false)
+                }
+              >
+                ×
+              </button>
+
+              <div
+                className={`status-avatar ${paymentStatus}`}
+              >
+                {paymentStatus ===
+                "confirmed"
+                  ? "✓"
+                  : paymentStatus ===
+                    "failed"
+                  ? "!"
+                  : "…"}
+              </div>
+
+              <p className="status-small">
+                KAKOBUY PAYMENT
+              </p>
+
+              <h2>
+                {paymentStatus ===
+                "confirmed"
+                  ? "Payment Confirmed"
+                  : paymentStatus ===
+                    "failed"
+                  ? "Payment Failed"
+                  : "Payment Pending"}
+              </h2>
+
+              <div
+                className={`status-pill ${paymentStatus}`}
+              >
+                <span />
+                {paymentStatus.toUpperCase()}
+              </div>
+
+              <p className="status-message">
+                {paymentStatus ===
+                "confirmed"
+                  ? "Your payment has been verified and confirmed by the Kakobuy admin."
+                  : paymentStatus ===
+                    "failed"
+                  ? "The Kakobuy admin could not confirm this payment. Please contact Kakobuy for assistance."
+                  : "Your payment screenshot has been received. The Kakobuy admin is reviewing your payment."}
+              </p>
+
+              <div className="status-order">
+                ORDER #
+                {String(order.id)}
+              </div>
+
+              <button
+                className="check-again"
+                onClick={() =>
+                  loadPaymentStatus(
+                    true
+                  )
+                }
+                disabled={statusLoading}
+              >
+                {statusLoading
+                  ? "CHECKING..."
+                  : "CHECK AGAIN"}
+              </button>
+
+              <p className="controlled-text">
+                Status is controlled by Kakobuy
+                Admin.
+              </p>
+            </div>
+          </div>
         )}
 
         {/* ==================== FOOTER ==================== */}
@@ -1427,9 +1814,22 @@ export default function PaymentPage() {
 
         .payment-page {
           min-height: 100vh;
-          background: #080808;
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(
+              circle at 10% 10%,
+              rgba(255, 25, 25, .16),
+              transparent 30%
+            ),
+            radial-gradient(
+              circle at 90% 35%,
+              rgba(255, 25, 25, .13),
+              transparent 32%
+            ),
+            #070707;
           color: #fff;
-          padding: 20px 14px 45px;
+          padding: 18px 13px 45px;
           font-family:
             Inter,
             system-ui,
@@ -1439,55 +1839,111 @@ export default function PaymentPage() {
             sans-serif;
         }
 
+        .background-orb {
+          position: fixed;
+          width: 250px;
+          height: 250px;
+          border-radius: 50%;
+          background: rgba(255, 30, 30, .06);
+          filter: blur(70px);
+          pointer-events: none;
+        }
+
+        .orb-one {
+          top: -100px;
+          left: -120px;
+        }
+
+        .orb-two {
+          right: -120px;
+          bottom: 10%;
+        }
+
         .payment-container {
           width: 100%;
           max-width: 680px;
           margin: 0 auto;
+          position: relative;
+          z-index: 2;
         }
 
         .payment-header {
+          position: relative;
           display: flex;
           justify-content: space-between;
           gap: 15px;
           align-items: flex-start;
-          margin-bottom: 15px;
+          margin-bottom: 20px;
+          animation: slideDown .7s ease both;
+        }
+
+        .brand {
+          color: #fff;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: .12em;
+          margin-bottom: 13px;
+        }
+
+        .brand span {
+          color: #ff3030;
         }
 
         .payment-header h1 {
           margin: 0;
-          font-size: 25px;
-          line-height: 1.1;
+          font-size: clamp(27px, 8vw, 42px);
+          line-height: .98;
+          letter-spacing: -.055em;
+          animation: slideUp .7s .08s ease both;
         }
 
         .payment-header p {
-          margin: 6px 0 0;
+          margin: 8px 0 0;
           color: #777;
           font-size: 11px;
+          animation: slideUp .7s .16s ease both;
         }
 
         .method-badge {
           padding: 8px 10px;
-          border: 1px solid #292929;
+          border: 1px solid rgba(255, 48, 48, .3);
           border-radius: 9px;
-          background: #111;
-          color: #aaa;
-          font-size: 10px;
-          font-weight: 800;
+          background: rgba(255, 48, 48, .06);
+          color: #ff7070;
+          font-size: 9px;
+          font-weight: 900;
           white-space: nowrap;
+          box-shadow: 0 0 22px rgba(255, 48, 48, .07);
         }
 
         .order-card,
         .payment-card,
         .timer-card,
         .upload-card,
-        .submitted-card,
-        .loading-card,
-        .error-card {
-          background: #101010;
+        .submitted-card {
+          position: relative;
+          background: rgba(15, 15, 15, .94);
           border: 1px solid #292929;
-          border-radius: 17px;
+          border-radius: 18px;
           padding: 18px;
           margin-bottom: 14px;
+          box-shadow: 0 15px 45px rgba(0,0,0,.18);
+        }
+
+        .order-card::before,
+        .payment-details-card::before {
+          content: "";
+          position: absolute;
+          left: 20px;
+          right: 20px;
+          top: -1px;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,48,48,.8),
+            transparent
+          );
         }
 
         .order-card-header {
@@ -1500,12 +1956,13 @@ export default function PaymentPage() {
         .amount-box span,
         .wallet-box > span,
         .timer-card > span,
-        .section-label {
+        .section-label,
+        .mini-label {
           display: block;
           color: #666;
-          font-size: 9px;
+          font-size: 8px;
           font-weight: 900;
-          letter-spacing: .12em;
+          letter-spacing: .13em;
         }
 
         .order-card-header strong {
@@ -1519,7 +1976,7 @@ export default function PaymentPage() {
         }
 
         .order-total strong {
-          color: #fff;
+          color: #ff5555;
         }
 
         .buyer-name {
@@ -1550,7 +2007,7 @@ export default function PaymentPage() {
           padding: 12px;
           border: 1px solid #242424;
           border-radius: 11px;
-          background: #151515;
+          background: #121212;
         }
 
         .item-main {
@@ -1595,47 +2052,68 @@ export default function PaymentPage() {
         }
 
         .method-option {
-          min-height: 75px;
+          min-height: 80px;
           border: 1px solid #292929;
-          border-radius: 11px;
-          background: #151515;
-          color: #aaa;
+          border-radius: 12px;
+          background: #111;
+          color: #888;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           gap: 6px;
-          font-size: 10px;
-          font-weight: 800;
+          font-size: 9px;
+          font-weight: 900;
           cursor: pointer;
+          transition: .22s ease;
         }
 
         .method-option:hover {
+          transform: translateY(-2px);
           border-color: #555;
         }
 
         .method-option.selected {
           border-color: #ff3030;
-          background: rgba(255, 48, 48, .08);
+          background: rgba(255, 48, 48, .09);
           color: #fff;
+          box-shadow:
+            0 0 28px rgba(255, 48, 48, .13),
+            inset 0 0 20px rgba(255, 48, 48, .04);
+          animation: selectedPulse 1.8s infinite;
         }
 
         .method-symbol {
-          font-size: 20px;
-          font-weight: 900;
+          color: #aaa;
+          font-size: 21px;
+          font-weight: 950;
         }
 
-        .method-warning {
-          margin: 15px 0 2px;
+        .method-option.selected .method-symbol {
+          color: #ff4444;
+        }
+
+        .warning-box {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          margin-top: 15px;
+          padding: 10px;
+          border-radius: 10px;
+          background: rgba(255, 48, 48, .06);
+          border: 1px solid rgba(255, 48, 48, .18);
+        }
+
+        .warning-box > span {
           color: #ff3030;
-          font-size: 18px;
-          font-weight: 900;
+          font-size: 17px;
+          font-weight: 950;
         }
 
-        .warning-text {
-          margin: 0;
-          color: #ff5555;
-          font-size: 10px;
+        .warning-box p {
+          margin: 2px 0 0;
+          color: #ff7777;
+          font-size: 9px;
           line-height: 1.5;
         }
 
@@ -1646,42 +2124,70 @@ export default function PaymentPage() {
         }
 
         .payment-card-title > span {
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
+          flex: 0 0 auto;
           display: grid;
           place-items: center;
           border-radius: 50%;
-          background: #181818;
-          font-size: 20px;
+          background: rgba(255, 48, 48, .08);
+          border: 1px solid rgba(255, 48, 48, .2);
+          color: #ff4444;
+          font-size: 21px;
+          font-weight: 950;
+          box-shadow: 0 0 25px rgba(255,48,48,.08);
         }
 
-        .payment-card-title h2,
-        .upload-card h2,
-        .submitted-card h2 {
-          margin: 0;
-          font-size: 17px;
+        .payment-card-title h2 {
+          margin: 3px 0 0;
+          font-size: 18px;
         }
 
-        .payment-card-title p {
-          margin: 4px 0 0;
+        .payment-info {
+          margin: 5px 0 0;
           color: #777;
           font-size: 10px;
           line-height: 1.5;
         }
 
+        .loading-payment {
+          color: #666;
+          text-align: center;
+        }
+
+        .qr-area {
+          margin: 19px auto 5px;
+          text-align: center;
+        }
+
+        .qr-title {
+          color: #888;
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: .13em;
+          margin-bottom: 9px;
+        }
+
         .qr-wrapper {
-          margin: 17px auto;
-          width: 220px;
+          width: 215px;
           max-width: 100%;
+          margin: auto;
           padding: 10px;
           background: #fff;
-          border-radius: 12px;
+          border-radius: 13px;
+          box-shadow: 0 0 35px rgba(255,255,255,.04);
         }
 
         .qr-wrapper img {
           display: block;
           width: 100%;
           height: auto;
+        }
+
+        .qr-area p {
+          margin: 8px 0 0;
+          color: #666;
+          font-size: 9px;
         }
 
         .wallet-box,
@@ -1709,60 +2215,119 @@ export default function PaymentPage() {
         }
 
         .wallet-row button {
+          flex: 0 0 auto;
           border: 1px solid #444;
           background: #181818;
           color: #fff;
           border-radius: 8px;
-          padding: 8px 10px;
-          font-size: 9px;
-          font-weight: 800;
+          padding: 9px 11px;
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .wallet-row button:hover {
+          border-color: #ff3030;
         }
 
         .amount-box strong {
           display: block;
           margin-top: 5px;
-          font-size: 20px;
+          color: #fff;
+          font-size: 21px;
         }
 
         .pay-button,
-        .confirm-button {
+        .confirm-button,
+        .status-button {
           width: 100%;
-          min-height: 47px;
+          min-height: 48px;
           margin-top: 14px;
           border: 0;
           border-radius: 11px;
           background: #ff3030;
           color: #fff;
-          font-weight: 900;
+          font-weight: 950;
+          font-size: 10px;
           cursor: pointer;
+          box-shadow: 0 10px 28px rgba(255,48,48,.12);
+          transition: .2s ease;
+        }
+
+        .pay-button:hover,
+        .confirm-button:hover,
+        .status-button:hover {
+          background: #ff4545;
+          transform: translateY(-1px);
         }
 
         .pay-button:disabled,
-        .confirm-button:disabled {
+        .confirm-button:disabled,
+        .status-button:disabled {
           opacity: .45;
           cursor: not-allowed;
+          transform: none;
         }
 
         .timer-card {
           text-align: center;
           border-color: rgba(255, 48, 48, .35);
+          background:
+            radial-gradient(
+              circle at 50% 0,
+              rgba(255,48,48,.09),
+              transparent 50%
+            ),
+            #101010;
+          box-shadow: 0 0 35px rgba(255,48,48,.06);
+        }
+
+        .timer-top {
+          display: flex;
+          justify-content: space-between;
+          color: #666;
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: .1em;
         }
 
         .timer-card strong {
           display: block;
-          margin-top: 4px;
-          color: #ff5050;
-          font-size: 31px;
+          margin-top: 5px;
+          color: #ff4b4b;
+          font-size: 37px;
+          letter-spacing: .05em;
+          text-shadow: 0 0 25px rgba(255,48,48,.25);
         }
 
         .timer-card p {
-          margin: 5px 0 0;
+          margin: 5px 0 12px;
           color: #666;
-          font-size: 10px;
+          font-size: 9px;
+        }
+
+        .timer-bar {
+          height: 4px;
+          overflow: hidden;
+          border-radius: 99px;
+          background: #292929;
+        }
+
+        .timer-bar div {
+          height: 100%;
+          border-radius: inherit;
+          background: #ff3030;
+          box-shadow: 0 0 10px #ff3030;
+          transition: width 1s linear;
+        }
+
+        .timer-card.danger strong {
+          animation: dangerPulse .55s infinite;
         }
 
         .upload-card h2 {
-          margin-top: 3px;
+          margin: 3px 0 0;
+          font-size: 17px;
         }
 
         .upload-help {
@@ -1790,14 +2355,20 @@ export default function PaymentPage() {
         .upload-button {
           display: grid;
           place-items: center;
-          min-height: 46px;
+          min-height: 47px;
           border: 1px dashed #444;
           border-radius: 10px;
           background: #151515;
           color: #fff;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 900;
           cursor: pointer;
+          transition: .2s ease;
+        }
+
+        .upload-button:hover {
+          border-color: #ff3030;
+          background: #181010;
         }
 
         .upload-button input {
@@ -1814,87 +2385,365 @@ export default function PaymentPage() {
         }
 
         .upload-error {
-          background: rgba(255, 48, 48, .08);
-          border: 1px solid rgba(255, 48, 48, .3);
+          background: rgba(255,48,48,.08);
+          border: 1px solid rgba(255,48,48,.3);
           color: #ff7777;
         }
 
         .upload-success {
-          background: rgba(32, 182, 107, .08);
-          border: 1px solid rgba(32, 182, 107, .3);
+          background: rgba(32,182,107,.08);
+          border: 1px solid rgba(32,182,107,.3);
           color: #58d995;
         }
 
         .submitted-card {
           text-align: center;
+          animation: slideUp .45s ease both;
         }
 
         .submitted-icon {
-          width: 52px;
-          height: 52px;
-          margin: 0 auto 10px;
+          width: 58px;
+          height: 58px;
+          margin: 0 auto 12px;
           display: grid;
           place-items: center;
           border-radius: 50%;
-          background: rgba(32, 182, 107, .12);
+          background: rgba(32,182,107,.1);
+          border: 1px solid rgba(32,182,107,.22);
           color: #35c87d;
-          font-size: 25px;
+          font-size: 26px;
           font-weight: 900;
+          box-shadow: 0 0 30px rgba(32,182,107,.08);
         }
 
-        .submitted-card p {
+        .submitted-card h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .submitted-card p:not(.section-label) {
           color: #777;
-          font-size: 11px;
+          font-size: 10px;
           line-height: 1.6;
         }
 
         .submitted-order {
           display: inline-block;
-          margin-top: 6px;
-          padding: 8px 10px;
+          margin-top: 5px;
+          padding: 8px 11px;
           border-radius: 8px;
           background: #181818;
           color: #aaa;
-          font-size: 10px;
+          font-size: 9px;
         }
 
-        .loading-card,
-        .error-card {
+        .status-button {
+          background: linear-gradient(
+            135deg,
+            #ff3030,
+            #b90000
+          );
+          box-shadow:
+            0 0 25px rgba(255,48,48,.16),
+            0 10px 30px rgba(0,0,0,.2);
+        }
+
+        /* ================= STATUS POPUP ================= */
+
+        .status-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(0,0,0,.78);
+          backdrop-filter: blur(10px);
+          animation: fadeIn .2s ease;
+        }
+
+        .status-popup {
+          width: 100%;
+          max-width: 370px;
+          position: relative;
+          overflow: hidden;
+          padding: 30px 22px 22px;
           text-align: center;
-          margin-top: 30px;
+          border: 1px solid #303030;
+          border-radius: 22px;
+          background:
+            radial-gradient(
+              circle at 50% -20%,
+              rgba(255,48,48,.17),
+              transparent 48%
+            ),
+            #111;
+          box-shadow:
+            0 0 80px rgba(255,48,48,.12),
+            0 25px 70px rgba(0,0,0,.5);
+          animation: profilePop .35s cubic-bezier(.2,.8,.2,1);
         }
 
-        .loading-card h2,
-        .error-card h2 {
-          font-size: 15px;
-        }
-
-        .loading-card p,
-        .error-card p {
-          color: #777;
-          font-size: 11px;
-        }
-
-        .error-card button {
-          min-height: 44px;
-          padding: 0 18px;
-          border: 0;
-          border-radius: 9px;
+        .status-popup::before {
+          content: "";
+          position: absolute;
+          left: 15%;
+          right: 15%;
+          top: 0;
+          height: 2px;
           background: #ff3030;
+          box-shadow: 0 0 18px #ff3030;
+        }
+
+        .status-close {
+          position: absolute;
+          right: 12px;
+          top: 12px;
+          width: 31px;
+          height: 31px;
+          border: 1px solid #292929;
+          border-radius: 50%;
+          background: #181818;
+          color: #aaa;
+          font-size: 20px;
+          cursor: pointer;
+        }
+
+        .status-avatar {
+          width: 76px;
+          height: 76px;
+          margin: 0 auto 13px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          font-size: 31px;
+          font-weight: 950;
+          border: 3px solid #555;
+          animation: avatarPulse 1.8s infinite;
+        }
+
+        .status-avatar.pending {
+          color: #ffc04d;
+          border-color: #ffc04d;
+          background: rgba(255,174,0,.08);
+          box-shadow: 0 0 35px rgba(255,174,0,.12);
+        }
+
+        .status-avatar.confirmed {
+          color: #55e59a;
+          border-color: #55e59a;
+          background: rgba(30,220,120,.08);
+          box-shadow: 0 0 35px rgba(30,220,120,.12);
+        }
+
+        .status-avatar.failed {
+          color: #ff5b5b;
+          border-color: #ff3030;
+          background: rgba(255,48,48,.08);
+          box-shadow: 0 0 35px rgba(255,48,48,.15);
+        }
+
+        .status-small {
+          color: #666;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .18em;
+          margin: 0 0 7px;
+        }
+
+        .status-popup h2 {
+          margin: 0;
+          font-size: 24px;
+          letter-spacing: -.04em;
+        }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          margin-top: 13px;
+          padding: 7px 11px;
+          border-radius: 99px;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .1em;
+        }
+
+        .status-pill span {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+        }
+
+        .status-pill.pending {
+          color: #ffc04d;
+          background: rgba(255,174,0,.08);
+          border: 1px solid rgba(255,174,0,.25);
+        }
+
+        .status-pill.pending span {
+          background: #ffc04d;
+        }
+
+        .status-pill.confirmed {
+          color: #55e59a;
+          background: rgba(30,220,120,.08);
+          border: 1px solid rgba(30,220,120,.25);
+        }
+
+        .status-pill.confirmed span {
+          background: #55e59a;
+        }
+
+        .status-pill.failed {
+          color: #ff6969;
+          background: rgba(255,48,48,.08);
+          border: 1px solid rgba(255,48,48,.25);
+        }
+
+        .status-pill.failed span {
+          background: #ff3030;
+        }
+
+        .status-message {
+          margin: 17px auto;
+          max-width: 310px;
+          color: #777;
+          font-size: 10px;
+          line-height: 1.65;
+        }
+
+        .status-order {
+          display: inline-block;
+          padding: 8px 11px;
+          border-radius: 8px;
+          background: #090909;
+          border: 1px solid #242424;
+          color: #999;
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .check-again {
+          width: 100%;
+          min-height: 44px;
+          margin-top: 15px;
+          border: 1px solid #393939;
+          border-radius: 10px;
+          background: #181818;
           color: #fff;
-          font-weight: 800;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .check-again:hover {
+          border-color: #ff3030;
+        }
+
+        .check-again:disabled {
+          opacity: .5;
+        }
+
+        .controlled-text {
+          margin: 13px 0 0;
+          color: #444;
+          font-size: 8px;
         }
 
         footer {
           text-align: center;
           color: #555;
-          font-size: 10px;
+          font-size: 9px;
           padding-top: 8px;
+          letter-spacing: .1em;
+          font-weight: 900;
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(18px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-15px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes selectedPulse {
+          0%, 100% {
+            box-shadow:
+              0 0 20px rgba(255,48,48,.08);
+          }
+
+          50% {
+            box-shadow:
+              0 0 32px rgba(255,48,48,.18);
+          }
+        }
+
+        @keyframes dangerPulse {
+          50% {
+            transform: scale(1.04);
+            text-shadow:
+              0 0 30px rgba(255,48,48,.7);
+          }
+        }
+
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes profilePop {
+          from {
+            opacity: 0;
+            transform:
+              translateY(25px)
+              scale(.9);
+          }
+
+          to {
+            opacity: 1;
+            transform:
+              translateY(0)
+              scale(1);
+          }
+        }
+
+        @keyframes avatarPulse {
+          0%, 100% {
+            transform: scale(1);
+          }
+
+          50% {
+            transform: scale(1.045);
+          }
         }
 
         @media (max-width: 520px) {
           .payment-page {
-            padding: 15px 11px 35px;
+            padding: 15px 10px 35px;
           }
 
           .payment-header {
@@ -1924,6 +2773,10 @@ export default function PaymentPage() {
 
           .wallet-row button {
             min-height: 40px;
+          }
+
+          .status-popup {
+            max-width: 355px;
           }
         }
       `}</style>
