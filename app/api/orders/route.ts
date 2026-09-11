@@ -5,7 +5,6 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
 
-    // Accept either ?id=123 or ?orderId=123
     const id =
       searchParams.get("id") ||
       searchParams.get("orderId")
@@ -23,7 +22,6 @@ export async function GET(request: Request) {
       )
     }
 
-    // Order IDs are numeric in the database.
     const numericId = Number(id)
 
     if (
@@ -39,16 +37,11 @@ export async function GET(request: Request) {
       )
     }
 
-    let result
-
     /*
-     * If email is supplied, try the secure
-     * ID + email lookup first.
-     *
-     * If email is not supplied, use ID only.
+     * First try ID + email when an email is supplied.
      */
     if (email) {
-      result = await sql`
+      const emailResult = await sql`
         SELECT
           id,
           full_name,
@@ -73,32 +66,46 @@ export async function GET(request: Request) {
           AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
         LIMIT 1
       `
-    } else {
-      result = await sql`
-        SELECT
-          id,
-          full_name,
-          email,
-          phone,
-          country,
-          address,
-          city,
-          state,
-          items,
-          total,
-          payment_method,
-          payment_status,
-          wallet_copied,
-          wallet_copied_at,
-          transaction_image,
-          transaction_submitted,
-          transaction_submitted_at,
-          created_at
-        FROM orders
-        WHERE id = ${numericId}
-        LIMIT 1
-      `
+
+      if (emailResult.length > 0) {
+        return NextResponse.json({
+          ok: true,
+          order: emailResult[0],
+        })
+      }
     }
+
+    /*
+     * Fallback:
+     * The order ID is unique, so load the order by ID.
+     *
+     * This also prevents a harmless difference in email
+     * formatting from causing "Order not found".
+     */
+    const result = await sql`
+      SELECT
+        id,
+        full_name,
+        email,
+        phone,
+        country,
+        address,
+        city,
+        state,
+        items,
+        total,
+        payment_method,
+        payment_status,
+        wallet_copied,
+        wallet_copied_at,
+        transaction_image,
+        transaction_submitted,
+        transaction_submitted_at,
+        created_at
+      FROM orders
+      WHERE id = ${numericId}
+      LIMIT 1
+    `
 
     if (result.length === 0) {
       return NextResponse.json(
@@ -115,10 +122,7 @@ export async function GET(request: Request) {
       order: result[0],
     })
   } catch (error) {
-    console.error(
-      "Order GET error:",
-      error
-    )
+    console.error("Order GET error:", error)
 
     return NextResponse.json(
       {
@@ -231,10 +235,7 @@ export async function POST(request: Request) {
       orderId: result[0].id,
     })
   } catch (error) {
-    console.error(
-      "Order API error:",
-      error
-    )
+    console.error("Order API error:", error)
 
     return NextResponse.json(
       {
