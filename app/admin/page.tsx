@@ -37,6 +37,9 @@ type PaymentMethod = {
 }
 
 export default function AdminPage() {
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [authorized, setAuthorized] = useState(false)
+
   const [selectedMethod, setSelectedMethod] = useState("bitcoin")
 
   const [information, setInformation] = useState("")
@@ -63,6 +66,46 @@ export default function AdminPage() {
   const [changingStatus, setChangingStatus] = useState(false)
   const [statusMessage, setStatusMessage] = useState("")
 
+  /*
+   * Check the admin cookie.
+   *
+   * This calls /api/admin-check.
+   * If the cookie is missing, the administrator
+   * is sent back to the login page.
+   */
+  useEffect(() => {
+    async function checkAdmin() {
+      try {
+        const response = await fetch(
+          "/api/admin-check",
+          {
+            cache: "no-store",
+          }
+        )
+
+        if (!response.ok) {
+          window.location.href = "/admin/login"
+          return
+        }
+
+        const data = await response.json()
+
+        if (!data?.authenticated) {
+          window.location.href = "/admin/login"
+          return
+        }
+
+        setAuthorized(true)
+      } catch {
+        window.location.href = "/admin/login"
+      } finally {
+        setCheckingAuth(false)
+      }
+    }
+
+    checkAdmin()
+  }, [])
+
   async function loadPaymentMethod(methodId: string) {
     setLoadingSettings(true)
     setSettingsMessage("")
@@ -79,7 +122,8 @@ export default function AdminPage() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data?.error || "Unable to load payment settings."
+          data?.error ||
+            "Unable to load payment settings."
         )
       }
 
@@ -87,21 +131,26 @@ export default function AdminPage() {
 
       setInformation(method.information || "")
       setWalletAddress(method.wallet_address || "")
+
       setHeroHeading(
         method.hero_heading ||
-          method.hero_heading ||
           "PAY WITH CRYPTO"
       )
+
       setHeroSubtitle(
         method.hero_subtitle ||
           "Secure and simple crypto payment"
       )
-      setFooterText(method.footer_text || "KAKOBUY")
+
+      setFooterText(
+        method.footer_text ||
+          "KAKOBUY"
+      )
 
       setQrPreview(
-        method.qr_image_url ||
-          ""
+        method.qr_image_url || ""
       )
+
       setQrFile(null)
     } catch (error) {
       setSettingsMessage(
@@ -129,23 +178,35 @@ export default function AdminPage() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data?.error || "Unable to load payment submissions."
+          data?.error ||
+            "Unable to load payment submissions."
         )
       }
 
-      setWaitingOrders(data.orders || [])
+      setWaitingOrders(
+        Array.isArray(data.orders)
+          ? data.orders
+          : []
+      )
     } catch (error) {
-      console.error(error)
+      console.error(
+        "Unable to load payment submissions:",
+        error
+      )
     } finally {
       setLoadingOrders(false)
     }
   }
 
   useEffect(() => {
+    if (!authorized) return
+
     loadPaymentMethod(selectedMethod)
-  }, [selectedMethod])
+  }, [selectedMethod, authorized])
 
   useEffect(() => {
+    if (!authorized) return
+
     loadWaitingOrders()
 
     const interval = setInterval(
@@ -154,7 +215,7 @@ export default function AdminPage() {
     )
 
     return () => clearInterval(interval)
-  }, [])
+  }, [authorized])
 
   function handleQrChange(
     event: React.ChangeEvent<HTMLInputElement>
@@ -173,6 +234,7 @@ export default function AdminPage() {
       setSettingsMessage(
         "QR code must be JPG, PNG, or WEBP."
       )
+
       event.target.value = ""
       return
     }
@@ -181,6 +243,7 @@ export default function AdminPage() {
       setSettingsMessage(
         "QR code must be smaller than 5MB."
       )
+
       event.target.value = ""
       return
     }
@@ -261,7 +324,9 @@ export default function AdminPage() {
         )
       }
 
-      if (data.paymentMethod?.qr_image_url) {
+      if (
+        data.paymentMethod?.qr_image_url
+      ) {
         setQrPreview(
           data.paymentMethod.qr_image_url
         )
@@ -288,7 +353,10 @@ export default function AdminPage() {
   }
 
   async function changeOrderStatus(
-    status: "pending" | "confirmed" | "failed"
+    status:
+      | "pending"
+      | "confirmed"
+      | "failed"
   ) {
     if (!selectedOrder) return
 
@@ -395,10 +463,137 @@ export default function AdminPage() {
     if (!value) return "Not available"
 
     try {
-      return new Date(value).toLocaleString()
+      return new Date(
+        value
+      ).toLocaleString()
     } catch {
       return value
     }
+  }
+
+  if (checkingAuth) {
+    return (
+      <main className="auth-loading">
+        <div className="auth-glow" />
+
+        <div className="auth-card">
+          <div className="auth-logo">
+            KAKO<span>BUY</span>
+          </div>
+
+          <div className="loader" />
+
+          <p>
+            VERIFYING ADMIN ACCESS...
+          </p>
+        </div>
+
+        <style jsx>{`
+          .auth-loading {
+            min-height: 100vh;
+            background: #070707;
+            color: #fff;
+            display: grid;
+            place-items: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            font-family:
+              Inter,
+              system-ui,
+              sans-serif;
+          }
+
+          .auth-glow {
+            position: fixed;
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: rgba(
+              255,
+              35,
+              35,
+              0.12
+            );
+            filter: blur(80px);
+            animation: authPulse 2s infinite;
+          }
+
+          .auth-card {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 35px;
+            border: 1px solid #252525;
+            border-radius: 18px;
+            background: rgba(
+              15,
+              15,
+              15,
+              0.94
+            );
+            box-shadow:
+              0 0 60px
+              rgba(
+                255,
+                30,
+                30,
+                0.1
+              );
+          }
+
+          .auth-logo {
+            font-size: 27px;
+            font-weight: 950;
+            margin-bottom: 22px;
+          }
+
+          .auth-logo span {
+            color: #ff3030;
+          }
+
+          .auth-card p {
+            color: #666;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: 0.14em;
+          }
+
+          .loader {
+            width: 28px;
+            height: 28px;
+            margin: 0 auto;
+            border-radius: 50%;
+            border: 3px solid #242424;
+            border-top-color: #ff3030;
+            animation: spin 0.8s linear infinite;
+          }
+
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          @keyframes authPulse {
+            0%,
+            100% {
+              opacity: 0.5;
+              transform: scale(0.9);
+            }
+
+            50% {
+              opacity: 1;
+              transform: scale(1.1);
+            }
+          }
+        `}</style>
+      </main>
+    )
+  }
+
+  if (!authorized) {
+    return null
   }
 
   return (
@@ -439,6 +634,19 @@ export default function AdminPage() {
             className="refresh-button"
           >
             ↻ REFRESH
+          </button>
+
+          <button
+            onClick={() => {
+              document.cookie =
+                "kakobuy_admin=; Max-Age=0; path=/"
+
+              window.location.href =
+                "/admin/login"
+            }}
+            className="logout-button"
+          >
+            LOG OUT
           </button>
         </div>
       </header>
@@ -545,6 +753,7 @@ export default function AdminPage() {
                     <span>
                       AMOUNT
                     </span>
+
                     <strong>
                       {order.total}
                     </strong>
@@ -554,6 +763,7 @@ export default function AdminPage() {
                     <span>
                       METHOD
                     </span>
+
                     <strong>
                       {(
                         order.payment_method ||
@@ -1117,7 +1327,8 @@ export default function AdminPage() {
         }
 
         .top-actions a,
-        .refresh-button {
+        .refresh-button,
+        .logout-button {
           border: 1px solid #292929;
           background: #111;
           color: #aaa;
@@ -1133,6 +1344,12 @@ export default function AdminPage() {
         .refresh-button:hover {
           color: #fff;
           border-color: #ff3030;
+        }
+
+        .logout-button:hover {
+          color: #fff;
+          border-color: #ff3030;
+          background: #180808;
         }
 
         .dashboard-heading {
@@ -1830,6 +2047,7 @@ export default function AdminPage() {
             opacity: 0;
             transform: translateY(18px);
           }
+
           to {
             opacity: 1;
             transform: translateY(0);
@@ -1842,6 +2060,7 @@ export default function AdminPage() {
             opacity: 1;
             transform: scale(1);
           }
+
           50% {
             opacity: 0.45;
             transform: scale(0.75);
@@ -1852,6 +2071,7 @@ export default function AdminPage() {
           from {
             opacity: 0;
           }
+
           to {
             opacity: 1;
           }
@@ -1862,6 +2082,7 @@ export default function AdminPage() {
             opacity: 0;
             transform: translateY(18px) scale(0.96);
           }
+
           to {
             opacity: 1;
             transform: translateY(0) scale(1);
@@ -1885,9 +2106,6 @@ export default function AdminPage() {
 
           .dashboard-heading {
             padding-top: 32px;
-          }
-
-          .dashboard-heading {
             flex-direction: column;
           }
 
