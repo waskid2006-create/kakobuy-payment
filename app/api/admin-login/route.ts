@@ -3,26 +3,31 @@ import { cookies } from "next/headers"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+
+    const username = String(body?.username || "")
     const password = String(body?.password || "")
 
-    const adminPassword =
-      process.env.ADMIN_PASSWORD
+    const adminUsername = process.env.ADMIN_USER_NAME
+    const adminPassword = process.env.ADMIN_PASSWORD
 
-    if (!adminPassword) {
+    if (!adminUsername || !adminPassword) {
       return Response.json(
         {
           success: false,
-          error: "ADMIN_PASSWORD is not configured.",
+          error: "Admin credentials are not configured.",
         },
         { status: 500 }
       )
     }
 
-    if (!password || password !== adminPassword) {
+    if (
+      username !== adminUsername ||
+      password !== adminPassword
+    ) {
       return Response.json(
         {
           success: false,
-          error: "Incorrect password.",
+          error: "Incorrect username or password.",
         },
         { status: 401 }
       )
@@ -46,10 +51,7 @@ export async function POST(request: Request) {
       success: true,
     })
   } catch (error) {
-    console.error(
-      "Admin login error:",
-      error
-    )
+    console.error("Admin login error:", error)
 
     return Response.json(
       {
