@@ -1,8 +1,6 @@
-/* ==================== 1. IMPORTS ==================== */
 import { put } from "@vercel/blob"
 import { sql } from "@/app/db"
 
-/* ==================== 2. UPLOAD SETTINGS ==================== */
 const MAX_SIZE = 5 * 1024 * 1024
 
 const ALLOWED_TYPES = [
@@ -11,13 +9,13 @@ const ALLOWED_TYPES = [
   "image/webp",
 ]
 
-/* ==================== 3. POST ==================== */
 export async function POST(request: Request) {
   try {
-    /* ==================== 4. READ FORM DATA ==================== */
-    const form = await request.formData()
+    const form =
+      await request.formData()
 
-    const file = form.get("file")
+    const file =
+      form.get("file")
 
     const orderId = String(
       form.get("orderId") || ""
@@ -27,7 +25,6 @@ export async function POST(request: Request) {
       form.get("email") || ""
     ).trim()
 
-    /* ==================== 5. CHECK ORDER ID ==================== */
     if (!orderId) {
       return Response.json(
         {
@@ -38,18 +35,17 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 6. CHECK FILE ==================== */
     if (!(file instanceof File)) {
       return Response.json(
         {
           success: false,
-          error: "Please upload an image.",
+          error:
+            "Please select a payment screenshot.",
         },
         { status: 400 }
       )
     }
 
-    /* ==================== 7. CHECK FILE TYPE ==================== */
     if (!ALLOWED_TYPES.includes(file.type)) {
       return Response.json(
         {
@@ -61,12 +57,12 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 8. CHECK FILE SIZE ==================== */
     if (file.size <= 0) {
       return Response.json(
         {
           success: false,
-          error: "The selected image is empty.",
+          error:
+            "The selected image is empty.",
         },
         { status: 400 }
       )
@@ -76,31 +72,28 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error: "Image must be smaller than 5 MB.",
+          error:
+            "Image must be smaller than 5 MB.",
         },
         { status: 400 }
       )
     }
 
-    /* ==================== 9. CHECK ORDER ==================== */
     const orderCheck = email
       ? await sql`
           SELECT
             id,
-            email,
-            transaction_image,
-            transaction_submitted
+            email
           FROM orders
           WHERE id = ${orderId}
-          AND email = ${email}
+            AND LOWER(TRIM(email)) =
+                LOWER(TRIM(${email}))
           LIMIT 1
         `
       : await sql`
           SELECT
             id,
-            email,
-            transaction_image,
-            transaction_submitted
+            email
           FROM orders
           WHERE id = ${orderId}
           LIMIT 1
@@ -116,7 +109,6 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 10. GET FILE EXTENSION ==================== */
     const extension =
       file.type === "image/png"
         ? "png"
@@ -124,11 +116,9 @@ export async function POST(request: Request) {
         ? "webp"
         : "jpg"
 
-    /* ==================== 11. CREATE FILE NAME ==================== */
     const filename =
       `transactions/${orderId}-${Date.now()}.${extension}`
 
-    /* ==================== 12. UPLOAD TO VERCEL BLOB ==================== */
     const blob = await put(
       filename,
       file,
@@ -138,17 +128,18 @@ export async function POST(request: Request) {
       }
     )
 
-    /* ==================== 13. SAVE IMAGE URL ==================== */
     const updated = email
       ? await sql`
           UPDATE orders
           SET
-            transaction_image = ${blob.url},
+            transaction_image =
+              ${blob.url},
             transaction_submitted = false,
             transaction_submitted_at = NULL,
             updated_at = NOW()
           WHERE id = ${orderId}
-          AND email = ${email}
+            AND LOWER(TRIM(email)) =
+                LOWER(TRIM(${email}))
           RETURNING
             id,
             full_name,
@@ -164,7 +155,8 @@ export async function POST(request: Request) {
       : await sql`
           UPDATE orders
           SET
-            transaction_image = ${blob.url},
+            transaction_image =
+              ${blob.url},
             transaction_submitted = false,
             transaction_submitted_at = NULL,
             updated_at = NOW()
@@ -182,7 +174,6 @@ export async function POST(request: Request) {
             updated_at
         `
 
-    /* ==================== 14. CHECK DATABASE UPDATE ==================== */
     if (updated.length === 0) {
       return Response.json(
         {
@@ -194,17 +185,18 @@ export async function POST(request: Request) {
       )
     }
 
-    /* ==================== 15. SUCCESS ==================== */
     return Response.json({
       success: true,
-      message: "Transaction screenshot uploaded successfully.",
-      image: blob.url,
-      transaction_image: blob.url,
       uploaded: true,
+      confirmed: true,
+      message:
+        "Transaction screenshot uploaded successfully.",
+      image: blob.url,
+      transaction_image:
+        blob.url,
       order: updated[0],
     })
   } catch (error) {
-    /* ==================== 16. ERROR ==================== */
     console.error(
       "Transaction upload error:",
       error
