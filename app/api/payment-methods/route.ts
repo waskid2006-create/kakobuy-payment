@@ -1,6 +1,15 @@
 import { sql } from "@/app/db"
 
 export async function GET(request: Request) {
+  const cookieStore = await cookies()
+const adminCookie = cookieStore.get("kakobuy_admin")?.value
+
+if (adminCookie !== "authenticated") {
+  return Response.json(
+    { success: false, error: "Unauthorized" },
+    { status: 401 }
+  )
+}
   try {
     const { searchParams } =
       new URL(request.url)
