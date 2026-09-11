@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 
 const methods = [
   {
@@ -74,6 +74,13 @@ type PaymentMethod = {
   footer_text?: string
 }
 
+type PageDetails = {
+  orderId: string
+  email: string
+  total: string
+  method: string
+}
+
 export default function PaymentPage() {
   const [order, setOrder] =
     useState<Order | null>(null)
@@ -120,49 +127,76 @@ export default function PaymentPage() {
   const [uploadError, setUploadError] =
     useState("")
 
-  const details = useMemo(() => {
+  /*
+   * IMPORTANT:
+   * URL details are now loaded AFTER the page mounts.
+   * This prevents Page 3 from incorrectly saying
+   * "Missing order ID" when the URL contains ?orderId=29.
+   */
+  const [details, setDetails] =
+    useState<PageDetails>({
+      orderId: "",
+      email: "",
+      total: "",
+      method: "bitcoin",
+    })
+
+  /* ==================== READ URL ==================== */
+
+  useEffect(() => {
     if (typeof window === "undefined") {
-      return {
-        orderId: "",
-        email: "",
-        total: "",
-        method: "",
-      }
+      return
     }
 
-    const params = new URLSearchParams(
-      window.location.search
-    )
+    const params =
+      new URLSearchParams(
+        window.location.search
+      )
 
-    return {
-      orderId:
-        params.get("orderId") ||
-        params.get("id") ||
-        "",
-      email:
-        params.get("email")?.trim() ||
-        "",
-      total:
-        params.get("total") || "",
-      method:
-        params.get("method") ||
-        "bitcoin",
-    }
+    const orderId =
+      params.get("orderId") ||
+      params.get("id") ||
+      ""
+
+    const email =
+      params.get("email")?.trim() ||
+      ""
+
+    const total =
+      params.get("total") ||
+      ""
+
+    const method =
+      params.get("method") ||
+      "bitcoin"
+
+    setDetails({
+      orderId,
+      email,
+      total,
+      method,
+    })
   }, [])
 
   /* ==================== LOAD ORDER ==================== */
 
   async function loadOrder() {
+    /*
+     * Do nothing until the URL has been read.
+     *
+     * This is different from the old version.
+     * We no longer immediately show "Missing order ID"
+     * during the first render.
+     */
     if (!details.orderId) {
-      setError("Missing order ID.")
-      setLoading(false)
       return
     }
 
     try {
       setError("")
 
-      const params = new URLSearchParams()
+      const params =
+        new URLSearchParams()
 
       params.set(
         "id",
@@ -176,17 +210,22 @@ export default function PaymentPage() {
         )
       }
 
-      const response = await fetch(
-        `/api/orders?${params.toString()}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      )
+      const response =
+        await fetch(
+          `/api/orders?${params.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        )
 
-      const data = await response.json()
+      const data =
+        await response.json()
 
-      if (!response.ok || !data?.order) {
+      if (
+        !response.ok ||
+        !data?.order
+      ) {
         throw new Error(
           data?.error ||
             "Unable to load this order."
@@ -194,6 +233,7 @@ export default function PaymentPage() {
       }
 
       setOrder(data.order)
+      setError("")
     } catch (err) {
       console.error(
         "Load order error:",
@@ -217,17 +257,19 @@ export default function PaymentPage() {
       setPaymentMethodLoading(true)
 
       const method =
-        details.method || "bitcoin"
+        details.method ||
+        "bitcoin"
 
-      const response = await fetch(
-        `/api/payment-methods?id=${encodeURIComponent(
-          method
-        )}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      )
+      const response =
+        await fetch(
+          `/api/payment-methods?id=${encodeURIComponent(
+            method
+          )}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        )
 
       const text =
         await response.text()
@@ -264,10 +306,49 @@ export default function PaymentPage() {
     }
   }
 
+  /*
+   * Load order and payment method only AFTER
+   * the URL details have been read.
+   */
   useEffect(() => {
+    if (!details.orderId) {
+      return
+    }
+
     loadOrder()
     loadPaymentMethod()
-  }, [])
+  }, [
+    details.orderId,
+    details.email,
+    details.method,
+  ])
+
+  /*
+   * If there is genuinely no order ID after the
+   * browser URL has been read, show the error.
+   */
+  useEffect(() => {
+    if (
+      details.orderId === "" &&
+      typeof window !== "undefined"
+    ) {
+      const hasQuery =
+        window.location.search.length > 0
+
+      if (
+        hasQuery &&
+        !new URLSearchParams(
+          window.location.search
+        ).get("orderId") &&
+        !new URLSearchParams(
+          window.location.search
+        ).get("id")
+      ) {
+        setLoading(false)
+        setError("Missing order ID.")
+      }
+    }
+  }, [details.orderId])
 
   /* ==================== REFRESH ORDER ==================== */
 
@@ -284,7 +365,11 @@ export default function PaymentPage() {
     return () => {
       window.clearInterval(interval)
     }
-  }, [order?.id])
+  }, [
+    order?.id,
+    details.orderId,
+    details.email,
+  ])
 
   /* ==================== FIVE MINUTE TIMER ==================== */
 
@@ -302,20 +387,28 @@ export default function PaymentPage() {
 
     const timer =
       window.setInterval(() => {
-        setTimeLeft((previous) => {
-          if (previous <= 1) {
-            window.clearInterval(timer)
-            return 0
-          }
+        setTimeLeft(
+          (previous) => {
+            if (previous <= 1) {
+              window.clearInterval(
+                timer
+              )
 
-          return previous - 1
-        })
+              return 0
+            }
+
+            return previous - 1
+          }
+        )
       }, 1000)
 
     return () => {
       window.clearInterval(timer)
     }
-  }, [paymentVisible, timeLeft])
+  }, [
+    paymentVisible,
+    timeLeft,
+  ])
 
   /* ==================== FORMAT TIMER ==================== */
 
@@ -326,14 +419,22 @@ export default function PaymentPage() {
     timeLeft % 60
 
   const timerText =
-    `${String(minutes).padStart(2, "0")}:${String(
-      seconds
-    ).padStart(2, "0")}`
+    `${String(minutes).padStart(
+      2,
+      "0"
+    )}:${String(seconds).padStart(
+      2,
+      "0"
+    )}`
 
   /* ==================== TOTAL ==================== */
 
   const orderTotal =
-    Number(order?.total ?? details.total ?? 0)
+    Number(
+      order?.total ??
+        details.total ??
+        0
+    )
 
   /* ==================== ITEMS ==================== */
 
@@ -354,6 +455,7 @@ export default function PaymentPage() {
       setUploadError(
         "Payment wallet address is not available."
       )
+
       return
     }
 
@@ -376,7 +478,8 @@ export default function PaymentPage() {
               "application/json",
           },
           body: JSON.stringify({
-            orderId: String(order?.id),
+            orderId:
+              String(order?.id),
             email:
               order?.email ||
               details.email ||
@@ -422,27 +525,38 @@ export default function PaymentPage() {
       "image/webp",
     ]
 
-    if (!allowedTypes.includes(file.type)) {
+    if (
+      !allowedTypes.includes(
+        file.type
+      )
+    ) {
       setUploadError(
         "Only JPG, PNG, and WEBP images are allowed."
       )
 
       event.target.value = ""
+
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (
+      file.size >
+      5 * 1024 * 1024
+    ) {
       setUploadError(
         "Image must be smaller than 5 MB."
       )
 
       event.target.value = ""
+
       return
     }
 
     if (
       transactionPreview &&
-      transactionPreview.startsWith("blob:")
+      transactionPreview.startsWith(
+        "blob:"
+      )
     ) {
       URL.revokeObjectURL(
         transactionPreview
@@ -453,11 +567,17 @@ export default function PaymentPage() {
       URL.createObjectURL(file)
 
     setTransactionFile(file)
-    setTransactionPreview(preview)
+    setTransactionPreview(
+      preview
+    )
     setTransactionUploaded(false)
 
-    /* Upload immediately after selection */
-    await uploadTransactionImage(file)
+    /*
+     * Upload immediately after selection.
+     */
+    await uploadTransactionImage(
+      file
+    )
   }
 
   /* ==================== UPLOAD SCREENSHOT ==================== */
@@ -469,6 +589,7 @@ export default function PaymentPage() {
       setUploadError(
         "Order information is not available."
       )
+
       return
     }
 
@@ -490,7 +611,10 @@ export default function PaymentPage() {
         String(order.id)
       )
 
-      if (order.email || details.email) {
+      if (
+        order.email ||
+        details.email
+      ) {
         formData.append(
           "email",
           order.email ||
@@ -498,13 +622,14 @@ export default function PaymentPage() {
         )
       }
 
-      const response = await fetch(
-        "/api/transaction-upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      )
+      const response =
+        await fetch(
+          "/api/transaction-upload",
+          {
+            method: "POST",
+            body: formData,
+          }
+        )
 
       const text =
         await response.text()
@@ -529,20 +654,23 @@ export default function PaymentPage() {
         )
       }
 
-      setTransactionUploaded(true)
+      setTransactionUploaded(
+        true
+      )
 
-      setOrder((previous) =>
-        previous
-          ? {
-              ...previous,
-              transaction_image:
-                data.transaction_image ||
-                data.image ||
-                previous.transaction_image,
-              transaction_submitted:
-                false,
-            }
-          : previous
+      setOrder(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                transaction_image:
+                  data.transaction_image ||
+                  data.image ||
+                  previous.transaction_image,
+                transaction_submitted:
+                  false,
+              }
+            : previous
       )
 
       setSubmissionMessage(
@@ -554,7 +682,9 @@ export default function PaymentPage() {
         err
       )
 
-      setTransactionUploaded(false)
+      setTransactionUploaded(
+        false
+      )
 
       setUploadError(
         err instanceof Error
@@ -577,6 +707,7 @@ export default function PaymentPage() {
       setUploadError(
         "Order information is not available."
       )
+
       return
     }
 
@@ -584,6 +715,7 @@ export default function PaymentPage() {
       setUploadError(
         "Upload your transaction screenshot first."
       )
+
       return
     }
 
@@ -592,23 +724,25 @@ export default function PaymentPage() {
     setSubmissionMessage("")
 
     try {
-      const response = await fetch(
-        "/api/payment-submission",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            orderId: String(order.id),
-            email:
-              order.email ||
-              details.email ||
-              "",
-          }),
-        }
-      )
+      const response =
+        await fetch(
+          "/api/payment-submission",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              orderId:
+                String(order.id),
+              email:
+                order.email ||
+                details.email ||
+                "",
+            }),
+          }
+        )
 
       const text =
         await response.text()
@@ -633,18 +767,19 @@ export default function PaymentPage() {
         )
       }
 
-      setOrder((previous) =>
-        previous
-          ? {
-              ...previous,
-              transaction_submitted:
-                true,
-              transaction_submitted_at:
-                data?.order
-                  ?.transaction_submitted_at ||
-                new Date().toISOString(),
-            }
-          : previous
+      setOrder(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                transaction_submitted:
+                  true,
+                transaction_submitted_at:
+                  data?.order
+                    ?.transaction_submitted_at ||
+                  new Date().toISOString(),
+              }
+            : previous
       )
 
       setSubmissionMessage(
@@ -657,7 +792,9 @@ export default function PaymentPage() {
 
       if (
         transactionPreview &&
-        transactionPreview.startsWith("blob:")
+        transactionPreview.startsWith(
+          "blob:"
+        )
       ) {
         URL.revokeObjectURL(
           transactionPreview
@@ -695,7 +832,9 @@ export default function PaymentPage() {
     methods.find(
       (item) =>
         item.id ===
-        String(methodId).toLowerCase()
+        String(
+          methodId
+        ).toLowerCase()
     ) || methods[0]
 
   const walletAddress =
@@ -714,7 +853,9 @@ export default function PaymentPage() {
     return () => {
       if (
         transactionPreview &&
-        transactionPreview.startsWith("blob:")
+        transactionPreview.startsWith(
+          "blob:"
+        )
       ) {
         URL.revokeObjectURL(
           transactionPreview
@@ -730,7 +871,10 @@ export default function PaymentPage() {
       <main className="payment-page">
         <div className="payment-container">
           <div className="loading-card">
-            <h2>LOADING ORDER...</h2>
+            <h2>
+              LOADING ORDER...
+            </h2>
+
             <p>
               Please wait while we load
               your order.
@@ -802,7 +946,9 @@ export default function PaymentPage() {
         <section className="order-card">
           <div className="order-card-header">
             <div>
-              <span>ORDER ID</span>
+              <span>
+                ORDER ID
+              </span>
 
               <strong>
                 #{String(order.id)}
@@ -839,15 +985,20 @@ export default function PaymentPage() {
             ) : (
               <div className="items-list">
                 {items.map(
-                  (item, index) => {
+                  (
+                    item,
+                    index
+                  ) => {
                     const quantity =
                       Number(
-                        item.quantity || 1
+                        item.quantity ||
+                          1
                       )
 
                     const unitPrice =
                       Number(
-                        item.unitPrice || 0
+                        item.unitPrice ||
+                          0
                       )
 
                     return (
@@ -866,27 +1017,35 @@ export default function PaymentPage() {
                             {item.size && (
                               <span>
                                 Size:{" "}
-                                {item.size}
+                                {
+                                  item.size
+                                }
                               </span>
                             )}
 
                             {item.style && (
                               <span>
                                 Style:{" "}
-                                {item.style}
+                                {
+                                  item.style
+                                }
                               </span>
                             )}
 
                             {item.color && (
                               <span>
                                 Color:{" "}
-                                {item.color}
+                                {
+                                  item.color
+                                }
                               </span>
                             )}
 
                             <span>
                               Qty:{" "}
-                              {quantity}
+                              {
+                                quantity
+                              }
                             </span>
                           </div>
                         </div>
@@ -918,12 +1077,16 @@ export default function PaymentPage() {
           <section className="payment-card">
             <div className="payment-card-title">
               <span>
-                {currentMethod.symbol}
+                {
+                  currentMethod.symbol
+                }
               </span>
 
               <div>
                 <h2>
-                  {currentMethod.name}
+                  {
+                    currentMethod.name
+                  }
                 </h2>
 
                 <p>
@@ -955,8 +1118,12 @@ export default function PaymentPage() {
 
                 <button
                   type="button"
-                  onClick={copyInfo}
-                  disabled={!walletAddress}
+                  onClick={
+                    copyInfo
+                  }
+                  disabled={
+                    !walletAddress
+                  }
                 >
                   {copied
                     ? "COPIED ✓"
@@ -971,7 +1138,9 @@ export default function PaymentPage() {
               </span>
 
               <strong>
-                {orderTotal.toFixed(2)}
+                {orderTotal.toFixed(
+                  2
+                )}
               </strong>
             </div>
 
@@ -980,8 +1149,12 @@ export default function PaymentPage() {
                 <button
                   type="button"
                   className="pay-button"
-                  onClick={copyInfo}
-                  disabled={!walletAddress}
+                  onClick={
+                    copyInfo
+                  }
+                  disabled={
+                    !walletAddress
+                  }
                 >
                   COPY WALLET & START PAYMENT
                 </button>
@@ -1030,7 +1203,9 @@ export default function PaymentPage() {
             {transactionPreview && (
               <div className="transaction-preview">
                 <img
-                  src={transactionPreview}
+                  src={
+                    transactionPreview
+                  }
                   alt="Transaction preview"
                 />
               </div>
@@ -1561,9 +1736,6 @@ export default function PaymentPage() {
 
           .wallet-row {
             align-items: stretch;
-          }
-
-          .wallet-row {
             flex-direction: column;
           }
 
