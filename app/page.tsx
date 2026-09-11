@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react"
 
+const CHECK_ORDER_URL =
+  "https://kakobuy-check-order.vercel.app/"
+
 const methods = [
   {
     id: "bitcoin",
@@ -24,8 +27,6 @@ const methods = [
     symbol: "BNB",
   },
 ]
-
-const CHECK_ORDER_URL = "https://kakobuy-check-order.vercel.app/"
 
 type OrderItem = {
   id: number
@@ -83,95 +84,164 @@ type PaymentMethod = {
   footer_text?: string | null
 }
 
-type PaymentStatus = "pending" | "confirmed" | "failed"
+type PaymentStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
 
-function normalizeStatus(value: unknown): PaymentStatus {
-  const status = String(value || "").toLowerCase()
+function normalizeStatus(
+  value: unknown
+): PaymentStatus {
+  const status = String(
+    value || ""
+  ).toLowerCase()
 
-  if (status === "confirmed") return "confirmed"
-  if (status === "failed") return "failed"
+  if (status === "confirmed") {
+    return "confirmed"
+  }
+
+  if (status === "failed") {
+    return "failed"
+  }
 
   return "pending"
 }
 
-function formatMoney(value: number | string | null | undefined) {
+function formatMoney(
+  value: number | string | null | undefined
+) {
   const amount = Number(value || 0)
 
   return `$${amount.toFixed(2)}`
 }
 
 function formatTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
+  const safeSeconds = Math.max(
+    0,
+    seconds
+  )
 
-  return `${String(minutes).padStart(2, "0")}:${String(
+  const minutes = Math.floor(
+    safeSeconds / 60
+  )
+
+  const remainingSeconds =
+    safeSeconds % 60
+
+  return `${String(minutes).padStart(
+    2,
+    "0"
+  )}:${String(
     remainingSeconds
   ).padStart(2, "0")}`
 }
 
 export default function Page() {
-  const [order, setOrder] = useState<Order | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
+  const [order, setOrder] =
+    useState<Order | null>(null)
 
-  const [selectedMethod, setSelectedMethod] = useState("bitcoin")
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod | null>(null)
-  const [paymentMethodLoading, setPaymentMethodLoading] =
-    useState(false)
+  const [loading, setLoading] =
+    useState(true)
 
-  const [paymentVisible, setPaymentVisible] =
-    useState(false)
-
-  // 5 MINUTES = 300 SECONDS
-  const [timeLeft, setTimeLeft] = useState(300)
-
-  const [copied, setCopied] = useState(false)
-
-  const [transactionFile, setTransactionFile] =
-    useState<File | null>(null)
-
-  const [transactionPreview, setTransactionPreview] =
+  const [error, setError] =
     useState("")
 
-  const [transactionUploaded, setTransactionUploaded] =
-    useState(false)
+  const [
+    selectedMethod,
+    setSelectedMethod,
+  ] = useState("bitcoin")
 
-  const [uploading, setUploading] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [
+    paymentMethod,
+    setPaymentMethod,
+  ] = useState<PaymentMethod | null>(
+    null
+  )
 
-  const [submissionMessage, setSubmissionMessage] =
-    useState("")
+  const [
+    paymentMethodLoading,
+    setPaymentMethodLoading,
+  ] = useState(false)
 
-  const [uploadError, setUploadError] = useState("")
-
-  const [statusOpen, setStatusOpen] = useState(false)
-
-  const [paymentStatus, setPaymentStatus] =
-    useState<PaymentStatus>("pending")
-
-  const [statusLoading, setStatusLoading] =
-    useState(false)
-
-  const [details, setDetails] = useState<{
-    orderId: string
-    email: string
-    total: string
-    method: string
-  }>({
-    orderId: "",
-    email: "",
-    total: "",
-    method: "",
-  })
+  const [
+    paymentVisible,
+    setPaymentVisible,
+  ] = useState(false)
 
   /*
-   * READ ORDER DETAILS FROM URL
+   * 5 MINUTES
+   * 5 × 60 = 300 SECONDS
+   */
+  const [timeLeft, setTimeLeft] =
+    useState(300)
+
+  const [copied, setCopied] =
+    useState(false)
+
+  const [
+    transactionFile,
+    setTransactionFile,
+  ] = useState<File | null>(null)
+
+  const [
+    transactionPreview,
+    setTransactionPreview,
+  ] = useState("")
+
+  const [
+    transactionUploaded,
+    setTransactionUploaded,
+  ] = useState(false)
+
+  const [uploading, setUploading] =
+    useState(false)
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false)
+
+  const [
+    submissionMessage,
+    setSubmissionMessage,
+  ] = useState("")
+
+  const [
+    uploadError,
+    setUploadError,
+  ] = useState("")
+
+  const [statusOpen, setStatusOpen] =
+    useState(false)
+
+  const [
+    paymentStatus,
+    setPaymentStatus,
+  ] = useState<PaymentStatus>(
+    "pending"
+  )
+
+  const [
+    statusLoading,
+    setStatusLoading,
+  ] = useState(false)
+
+  const [details, setDetails] =
+    useState({
+      orderId: "",
+      email: "",
+      total: "",
+      method: "",
+    })
+
+  /*
+   * GET URL INFORMATION
    */
   useEffect(() => {
-    const params = new URLSearchParams(
-      window.location.search
-    )
+    const params =
+      new URLSearchParams(
+        window.location.search
+      )
 
     const orderId =
       params.get("orderId") ||
@@ -195,14 +265,16 @@ export default function Page() {
     })
 
     if (method) {
-      const foundMethod = methods.find(
+      const found = methods.find(
         (item) =>
           item.id.toLowerCase() ===
           method.toLowerCase()
       )
 
-      if (foundMethod) {
-        setSelectedMethod(foundMethod.id)
+      if (found) {
+        setSelectedMethod(
+          found.id
+        )
       }
     }
   }, [])
@@ -211,53 +283,72 @@ export default function Page() {
    * LOAD ORDER
    */
   const loadOrder = async () => {
-    if (!details.orderId) return
+    if (!details.orderId) {
+      return
+    }
 
     try {
-      setError("")
+      const params =
+        new URLSearchParams()
 
-      const params = new URLSearchParams()
-
-      params.set("id", details.orderId)
-
-      if (details.email) {
-        params.set("email", details.email)
-      }
-
-      const response = await fetch(
-        `/api/orders?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
+      params.set(
+        "id",
+        details.orderId
       )
 
-      const data = await response.json()
+      if (details.email) {
+        params.set(
+          "email",
+          details.email
+        )
+      }
 
-      if (!response.ok || !data?.success) {
+      const response =
+        await fetch(
+          `/api/orders?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        )
+
+      const data =
+        await response.json()
+
+      if (
+        !response.ok ||
+        !data?.success
+      ) {
         throw new Error(
-          data?.error || "Unable to load order."
+          data?.error ||
+            "Unable to load order."
         )
       }
 
       setOrder(data.order)
 
-      if (data.order?.payment_method) {
-        const foundMethod = methods.find(
+      if (
+        data.order?.payment_method
+      ) {
+        const found = methods.find(
           (item) =>
             item.id.toLowerCase() ===
             String(
-              data.order.payment_method
+              data.order
+                .payment_method
             ).toLowerCase()
         )
 
-        if (foundMethod) {
-          setSelectedMethod(foundMethod.id)
+        if (found) {
+          setSelectedMethod(
+            found.id
+          )
         }
       }
 
       setPaymentStatus(
         normalizeStatus(
-          data.order?.payment_status
+          data.order
+            ?.payment_status
         )
       )
     } catch (err) {
@@ -274,16 +365,20 @@ export default function Page() {
   }
 
   useEffect(() => {
-    if (!details.orderId) return
+    if (!details.orderId) {
+      return
+    }
 
     loadOrder()
 
-    const interval = setInterval(
-      loadOrder,
-      5000
-    )
+    const interval =
+      setInterval(
+        loadOrder,
+        5000
+      )
 
-    return () => clearInterval(interval)
+    return () =>
+      clearInterval(interval)
   }, [
     details.orderId,
     details.email,
@@ -292,175 +387,221 @@ export default function Page() {
   /*
    * LOAD PAYMENT METHOD
    */
-  const loadPaymentMethod = async (
-    methodId: string
-  ) => {
-    try {
-      setPaymentMethodLoading(true)
+  const loadPaymentMethod =
+    async (
+      methodId: string
+    ) => {
+      try {
+        setPaymentMethodLoading(
+          true
+        )
 
-      const response = await fetch(
-        `/api/payment-methods?id=${encodeURIComponent(
-          methodId
-        )}`,
-        {
-          cache: "no-store",
+        const response =
+          await fetch(
+            `/api/payment-methods?id=${encodeURIComponent(
+              methodId
+            )}`,
+            {
+              cache: "no-store",
+            }
+          )
+
+        const data =
+          await response.json()
+
+        if (
+          !response.ok ||
+          !data?.paymentMethod
+        ) {
+          throw new Error(
+            data?.error ||
+              "Unable to load payment information."
+          )
         }
-      )
 
-      const data = await response.json()
-
-      if (!response.ok || !data?.paymentMethod) {
-        throw new Error(
-          data?.error ||
-            "Unable to load payment information."
+        setPaymentMethod(
+          data.paymentMethod
+        )
+      } catch (err) {
+        console.error(err)
+        setPaymentMethod(null)
+      } finally {
+        setPaymentMethodLoading(
+          false
         )
       }
-
-      setPaymentMethod(data.paymentMethod)
-    } catch (err) {
-      console.error(err)
-      setPaymentMethod(null)
-    } finally {
-      setPaymentMethodLoading(false)
     }
-  }
 
   useEffect(() => {
-    if (!selectedMethod) return
-
-    loadPaymentMethod(selectedMethod)
-  }, [selectedMethod])
-
-  /*
-   * 5-MINUTE COUNTDOWN
-   *
-   * Countdown only runs after COPY is clicked.
-   *
-   * 300 seconds = 5 minutes.
-   */
-  useEffect(() => {
-    if (!paymentVisible) return
-
-    if (timeLeft <= 0) {
-      window.location.href = CHECK_ORDER_URL
+    if (!selectedMethod) {
       return
     }
 
-    const timer = setInterval(() => {
-      setTimeLeft((current) => {
-        if (current <= 1) {
-          clearInterval(timer)
-
-          setTimeout(() => {
-            window.location.href =
-              CHECK_ORDER_URL
-          }, 50)
-
-          return 0
-        }
-
-        return current - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [paymentVisible])
+    loadPaymentMethod(
+      selectedMethod
+    )
+  }, [selectedMethod])
 
   /*
-   * LOAD PAYMENT STATUS
+   * =====================================================
+   * 5-MINUTE COUNTDOWN
+   * =====================================================
+   *
+   * The countdown ONLY starts after COPY.
+   *
+   * 300 → 299 → 298 ... → 2 → 1 → 0
+   *
+   * When it reaches 0:
+   *
+   *     AUTOMATICALLY GO TO PAGE 2
+   *
+   * window.location.replace() prevents
+   * the expired payment page remaining
+   * in browser history.
    */
-  const loadPaymentStatus = async (
-    showLoading = false
-  ) => {
-    if (!details.orderId) return
+  useEffect(() => {
+    if (!paymentVisible) {
+      return
+    }
 
-    try {
-      if (showLoading) {
-        setStatusLoading(true)
-      }
-
-      const params = new URLSearchParams()
-
-      params.set(
-        "orderId",
-        details.orderId
+    if (timeLeft <= 0) {
+      window.location.replace(
+        CHECK_ORDER_URL
       )
 
-      if (details.email) {
-        params.set(
-          "email",
-          details.email
+      return
+    }
+
+    const timer =
+      setTimeout(() => {
+        setTimeLeft(
+          (current) =>
+            Math.max(
+              0,
+              current - 1
+            )
         )
-      }
+      }, 1000)
 
-      const response = await fetch(
-        `/api/payment-status?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      )
+    return () =>
+      clearTimeout(timer)
+  }, [
+    paymentVisible,
+    timeLeft,
+  ])
 
-      const data = await response.json()
-
-      if (!response.ok || !data?.success) {
+  /*
+   * PAYMENT STATUS
+   */
+  const loadPaymentStatus =
+    async (
+      showLoading = false
+    ) => {
+      if (!details.orderId) {
         return
       }
 
-      const currentStatus =
-        normalizeStatus(
-          data.order?.payment_status
+      try {
+        if (showLoading) {
+          setStatusLoading(true)
+        }
+
+        const params =
+          new URLSearchParams()
+
+        params.set(
+          "orderId",
+          details.orderId
         )
 
-      setPaymentStatus(currentStatus)
-
-      setOrder((current) => {
-        if (!current) return current
-
-        return {
-          ...current,
-          payment_status:
-            currentStatus,
-          transaction_image:
-            data.order
-              ?.transaction_image ??
-            current.transaction_image,
-          transaction_submitted:
-            data.order
-              ?.transaction_submitted ??
-            current.transaction_submitted,
-          transaction_submitted_at:
-            data.order
-              ?.transaction_submitted_at ??
-            current.transaction_submitted_at,
+        if (details.email) {
+          params.set(
+            "email",
+            details.email
+          )
         }
-      })
-    } catch (err) {
-      console.error(
-        "Payment status error:",
-        err
-      )
-    } finally {
-      if (showLoading) {
-        setStatusLoading(false)
+
+        const response =
+          await fetch(
+            `/api/payment-status?${params.toString()}`,
+            {
+              cache: "no-store",
+            }
+          )
+
+        const data =
+          await response.json()
+
+        if (
+          !response.ok ||
+          !data?.success
+        ) {
+          return
+        }
+
+        const currentStatus =
+          normalizeStatus(
+            data.order
+              ?.payment_status
+          )
+
+        setPaymentStatus(
+          currentStatus
+        )
+
+        setOrder(
+          (current) => {
+            if (!current) {
+              return current
+            }
+
+            return {
+              ...current,
+              payment_status:
+                currentStatus,
+              transaction_image:
+                data.order
+                  ?.transaction_image ??
+                current.transaction_image,
+              transaction_submitted:
+                data.order
+                  ?.transaction_submitted ??
+                current.transaction_submitted,
+              transaction_submitted_at:
+                data.order
+                  ?.transaction_submitted_at ??
+                current.transaction_submitted_at,
+            }
+          }
+        )
+      } catch (err) {
+        console.error(
+          "Payment status error:",
+          err
+        )
+      } finally {
+        if (showLoading) {
+          setStatusLoading(
+            false
+          )
+        }
       }
     }
-  }
 
-  /*
-   * PAYMENT STATUS POPUP
-   *
-   * Refreshes every 3 seconds while open.
-   */
   useEffect(() => {
-    if (!statusOpen) return
+    if (!statusOpen) {
+      return
+    }
 
     loadPaymentStatus(true)
 
-    const interval = setInterval(() => {
-      loadPaymentStatus(false)
-    }, 3000)
+    const interval =
+      setInterval(() => {
+        loadPaymentStatus(false)
+      }, 3000)
 
-    return () => clearInterval(interval)
+    return () =>
+      clearInterval(interval)
   }, [
     statusOpen,
     details.orderId,
@@ -470,18 +611,24 @@ export default function Page() {
   /*
    * COPY WALLET
    *
-   * THIS IS WHERE THE 5-MINUTE TIMER STARTS.
+   * COPY = START 5 MINUTES
    */
   const copyInfo = async () => {
-    if (!paymentMethod?.wallet_address) {
+    if (
+      !paymentMethod?.wallet_address
+    ) {
       alert(
         "Wallet address is not available."
       )
+
       return
     }
 
     if (!details.orderId) {
-      alert("Order ID is missing.")
+      alert(
+        "Order ID is missing."
+      )
+
       return
     }
 
@@ -492,23 +639,32 @@ export default function Page() {
 
       setCopied(true)
 
-      // START 5-MINUTE COUNTDOWN
+      /*
+       * IMPORTANT:
+       * Start exactly at 5 minutes.
+       */
       setTimeLeft(300)
+
       setPaymentVisible(true)
 
-      await fetch("/api/payment-status", {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body: JSON.stringify({
-          orderId: details.orderId,
-          email: details.email,
-          paymentMethod:
-            selectedMethod,
-        }),
-      })
+      await fetch(
+        "/api/payment-status",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            orderId:
+              details.orderId,
+            email:
+              details.email,
+            paymentMethod:
+              selectedMethod,
+          }),
+        }
+      )
 
       setTimeout(() => {
         setCopied(false)
@@ -528,143 +684,182 @@ export default function Page() {
   const selectMethod = (
     methodId: string
   ) => {
-    if (order?.transaction_submitted) {
+    if (
+      order?.transaction_submitted
+    ) {
       return
     }
 
-    setSelectedMethod(methodId)
+    setSelectedMethod(
+      methodId
+    )
 
-    setPaymentVisible(false)
+    setPaymentVisible(
+      false
+    )
 
-    // Reset to 5 minutes for a new payment session.
     setTimeLeft(300)
 
-    setTransactionFile(null)
-    setTransactionPreview("")
-    setTransactionUploaded(false)
-    setSubmissionMessage("")
+    setTransactionFile(
+      null
+    )
+
+    setTransactionPreview(
+      ""
+    )
+
+    setTransactionUploaded(
+      false
+    )
+
+    setSubmissionMessage(
+      ""
+    )
+
     setUploadError("")
   }
 
   /*
-   * SCREENSHOT UPLOAD
+   * UPLOAD SCREENSHOT
    */
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file =
-      event.target.files?.[0]
+  const handleFileChange =
+    async (
+      event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+      const file =
+        event.target.files?.[0]
 
-    if (!file) return
+      if (!file) {
+        return
+      }
 
-    setUploadError("")
-    setSubmissionMessage("")
+      setUploadError("")
+      setSubmissionMessage("")
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ]
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ]
 
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError(
-        "Only JPG, PNG or WEBP images are allowed."
-      )
-      return
-    }
+      if (
+        !allowedTypes.includes(
+          file.type
+        )
+      ) {
+        setUploadError(
+          "Only JPG, PNG or WEBP images are allowed."
+        )
 
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError(
-        "Image must be less than 5MB."
-      )
-      return
-    }
+        return
+      }
 
-    setTransactionFile(file)
+      if (
+        file.size >
+        5 * 1024 * 1024
+      ) {
+        setUploadError(
+          "Image must be less than 5MB."
+        )
 
-    const previewUrl =
-      URL.createObjectURL(file)
+        return
+      }
 
-    setTransactionPreview(
-      previewUrl
-    )
+      setTransactionFile(file)
 
-    try {
-      setUploading(true)
+      const previewUrl =
+        URL.createObjectURL(
+          file
+        )
 
-      const formData =
-        new FormData()
-
-      formData.append(
-        "file",
-        file
-      )
-
-      formData.append(
-        "orderId",
-        details.orderId
+      setTransactionPreview(
+        previewUrl
       )
 
-      if (details.email) {
+      try {
+        setUploading(true)
+
+        const formData =
+          new FormData()
+
         formData.append(
-          "email",
-          details.email
+          "file",
+          file
         )
-      }
 
-      const response = await fetch(
-        "/api/transaction-upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      )
-
-      const data =
-        await response.json()
-
-      if (!response.ok || !data?.success) {
-        throw new Error(
-          data?.error ||
-            "Unable to upload screenshot."
+        formData.append(
+          "orderId",
+          details.orderId
         )
-      }
 
-      setTransactionUploaded(
-        true
-      )
-
-      setSubmissionMessage(
-        "Screenshot uploaded successfully. Tap CONFIRM PAYMENT to send it to admin."
-      )
-
-      setOrder((current) => {
-        if (!current) return current
-
-        return {
-          ...current,
-          transaction_image:
-            data.url ||
-            data.transaction_image ||
-            current.transaction_image,
+        if (details.email) {
+          formData.append(
+            "email",
+            details.email
+          )
         }
-      })
-    } catch (err) {
-      console.error(err)
 
-      setTransactionUploaded(
-        false
-      )
+        const response =
+          await fetch(
+            "/api/transaction-upload",
+            {
+              method: "POST",
+              body: formData,
+            }
+          )
 
-      setUploadError(
-        err instanceof Error
-          ? err.message
-          : "Upload failed."
-      )
-    } finally {
-      setUploading(false)
+        const data =
+          await response.json()
+
+        if (
+          !response.ok ||
+          !data?.success
+        ) {
+          throw new Error(
+            data?.error ||
+              "Unable to upload screenshot."
+          )
+        }
+
+        setTransactionUploaded(
+          true
+        )
+
+        setSubmissionMessage(
+          "Screenshot uploaded successfully. Tap CONFIRM PAYMENT to send it to admin."
+        )
+
+        setOrder(
+          (current) => {
+            if (!current) {
+              return current
+            }
+
+            return {
+              ...current,
+              transaction_image:
+                data.url ||
+                data.transaction_image ||
+                current.transaction_image,
+            }
+          }
+        )
+      } catch (err) {
+        console.error(err)
+
+        setTransactionUploaded(
+          false
+        )
+
+        setUploadError(
+          err instanceof Error
+            ? err.message
+            : "Upload failed."
+        )
+      } finally {
+        setUploading(false)
+      }
     }
-  }
 
   /*
    * SEND PAYMENT TO ADMIN
@@ -675,13 +870,17 @@ export default function Page() {
         setSubmissionMessage(
           "Order ID is missing."
         )
+
         return
       }
 
-      if (!transactionUploaded) {
+      if (
+        !transactionUploaded
+      ) {
         setSubmissionMessage(
           "Please upload your payment screenshot first."
         )
+
         return
       }
 
@@ -689,24 +888,25 @@ export default function Page() {
         setSubmitting(true)
         setSubmissionMessage("")
 
-        const response = await fetch(
-          "/api/payment-submission",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              orderId:
-                details.orderId,
-              email:
-                details.email,
-              paymentMethod:
-                selectedMethod,
-            }),
-          }
-        )
+        const response =
+          await fetch(
+            "/api/payment-submission",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                orderId:
+                  details.orderId,
+                email:
+                  details.email,
+                paymentMethod:
+                  selectedMethod,
+              }),
+            }
+          )
 
         const data =
           await response.json()
@@ -721,23 +921,27 @@ export default function Page() {
           )
         }
 
-        setOrder((current) => {
-          if (!current) return current
+        setOrder(
+          (current) => {
+            if (!current) {
+              return current
+            }
 
-          return {
-            ...current,
-            payment_method:
-              selectedMethod,
-            payment_status:
-              "pending",
-            transaction_submitted:
-              true,
-            transaction_submitted_at:
-              data.order
-                ?.transaction_submitted_at ||
-              new Date().toISOString(),
+            return {
+              ...current,
+              payment_method:
+                selectedMethod,
+              payment_status:
+                "pending",
+              transaction_submitted:
+                true,
+              transaction_submitted_at:
+                data.order
+                  ?.transaction_submitted_at ||
+                new Date().toISOString(),
+            }
           }
-        })
+        )
 
         setPaymentStatus(
           "pending"
@@ -747,14 +951,26 @@ export default function Page() {
           "Payment submitted successfully. Your screenshot has been sent to the admin for review."
         )
 
-        setPaymentVisible(false)
+        setPaymentVisible(
+          false
+        )
 
-        setTransactionFile(null)
-        setTransactionPreview("")
-        setTransactionUploaded(false)
+        setTransactionFile(
+          null
+        )
+
+        setTransactionPreview(
+          ""
+        )
+
+        setTransactionUploaded(
+          false
+        )
 
         await loadOrder()
-        await loadPaymentStatus(false)
+        await loadPaymentStatus(
+          false
+        )
       } catch (err) {
         console.error(err)
 
@@ -769,11 +985,13 @@ export default function Page() {
     }
 
   /*
-   * CLEANUP IMAGE PREVIEW
+   * CLEAN PREVIEW
    */
   useEffect(() => {
     return () => {
-      if (transactionPreview) {
+      if (
+        transactionPreview
+      ) {
         URL.revokeObjectURL(
           transactionPreview
         )
@@ -793,9 +1011,7 @@ export default function Page() {
         <div className="loader-box">
           <div className="spinner" />
 
-          <h2>
-            KAKOBUY
-          </h2>
+          <h2>KAKOBUY</h2>
 
           <p>
             Loading your order...
@@ -831,8 +1047,9 @@ export default function Page() {
           <button
             className="primary-button"
             onClick={() => {
-              window.location.href =
+              window.location.replace(
                 CHECK_ORDER_URL
+              )
             }}
           >
             BACK TO ORDER PAGE
@@ -845,7 +1062,8 @@ export default function Page() {
   const currentMethod =
     methods.find(
       (method) =>
-        method.id === selectedMethod
+        method.id ===
+        selectedMethod
     )
 
   const progress =
@@ -890,8 +1108,9 @@ export default function Page() {
         <button
           className="back-button"
           onClick={() => {
-            window.location.href =
+            window.location.replace(
               CHECK_ORDER_URL
+            )
           }}
         >
           ← ORDER
@@ -1003,8 +1222,7 @@ export default function Page() {
                 </div>
 
                 <div className="selected-method">
-                  {currentMethod?.symbol}
-                  {" "}
+                  {currentMethod?.symbol}{" "}
                   {currentMethod?.name}
                 </div>
               </div>
@@ -1054,7 +1272,6 @@ export default function Page() {
               {paymentMethodLoading ? (
                 <div className="payment-loading">
                   <div className="small-spinner" />
-
                   Loading payment information...
                 </div>
               ) : (
@@ -1110,10 +1327,8 @@ export default function Page() {
 
                     <div className="wallet-box">
                       <span>
-                        {
-                          paymentMethod?.wallet_address ||
-                          "Wallet address unavailable"
-                        }
+                        {paymentMethod?.wallet_address ||
+                          "Wallet address unavailable"}
                       </span>
 
                       <button
@@ -1161,7 +1376,6 @@ export default function Page() {
                   {paymentVisible && (
                     <div className="active-payment">
                       <div className="active-dot" />
-
                       PAYMENT SESSION ACTIVE
                     </div>
                   )}
@@ -1170,143 +1384,145 @@ export default function Page() {
             </section>
 
             {paymentVisible && (
-              <section className="timer-card">
-                <div className="timer-top">
-                  <div>
-                    <div className="section-label">
-                      PAYMENT WINDOW
+              <>
+                <section className="timer-card">
+                  <div className="timer-top">
+                    <div>
+                      <div className="section-label">
+                        5 MINUTE PAYMENT WINDOW
+                      </div>
+
+                      <h2>
+                        Complete payment before time expires
+                      </h2>
                     </div>
 
-                    <h2>
-                      Complete payment before time expires
-                    </h2>
+                    <div
+                      className={`timer ${
+                        timeLeft <= 30
+                          ? "danger"
+                          : ""
+                      }`}
+                    >
+                      {formatTime(
+                        timeLeft
+                      )}
+                    </div>
                   </div>
 
-                  <div
-                    className={`timer ${
-                      timeLeft <= 30
-                        ? "danger"
-                        : ""
-                    }`}
-                  >
-                    {formatTime(
-                      timeLeft
-                    )}
-                  </div>
-                </div>
-
-                <div className="timer-bar">
-                  <div
-                    className="timer-progress"
-                    style={{
-                      width: `${progress}%`,
-                    }}
-                  />
-                </div>
-
-                <p className="timer-note">
-                  Your 5-minute payment window
-                  started when you copied the
-                  wallet address.
-                </p>
-              </section>
-            )}
-
-            {paymentVisible && (
-              <section className="upload-card">
-                <div className="section-label">
-                  PAYMENT PROOF
-                </div>
-
-                <h2>
-                  Upload payment screenshot
-                </h2>
-
-                <p>
-                  Upload a clear screenshot showing
-                  your payment.
-                </p>
-
-                <label className="upload-area">
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={
-                      handleFileChange
-                    }
-                  />
-
-                  <div className="upload-icon">
-                    ↑
-                  </div>
-
-                  <strong>
-                    {uploading
-                      ? "UPLOADING..."
-                      : "SELECT SCREENSHOT"}
-                  </strong>
-
-                  <span>
-                    JPG, PNG or WEBP • MAX 5MB
-                  </span>
-                </label>
-
-                {transactionPreview && (
-                  <div className="preview-box">
-                    <img
-                      src={
-                        transactionPreview
-                      }
-                      alt="Payment screenshot preview"
+                  <div className="timer-bar">
+                    <div
+                      className="timer-progress"
+                      style={{
+                        width: `${progress}%`,
+                      }}
                     />
                   </div>
-                )}
 
-                {transactionUploaded && (
-                  <div className="upload-success">
-                    <span>
-                      ✓
-                    </span>
+                  <p className="timer-note">
+                    The countdown started when
+                    you copied the wallet address.
+                    When it reaches 00:00, you
+                    will automatically return to
+                    the order page.
+                  </p>
+                </section>
 
-                    <div>
-                      <strong>
-                        CONFIRMED
-                      </strong>
+                <section className="upload-card">
+                  <div className="section-label">
+                    PAYMENT PROOF
+                  </div>
 
-                      <p>
-                        Screenshot uploaded successfully.
-                      </p>
+                  <h2>
+                    Upload payment screenshot
+                  </h2>
+
+                  <p>
+                    Upload a clear screenshot showing
+                    your payment.
+                  </p>
+
+                  <label className="upload-area">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={
+                        handleFileChange
+                      }
+                    />
+
+                    <div className="upload-icon">
+                      ↑
                     </div>
-                  </div>
-                )}
 
-                {uploadError && (
-                  <div className="upload-error">
-                    {uploadError}
-                  </div>
-                )}
+                    <strong>
+                      {uploading
+                        ? "UPLOADING..."
+                        : "SELECT SCREENSHOT"}
+                    </strong>
 
-                {submissionMessage && (
-                  <div className="submission-message">
-                    {submissionMessage}
-                  </div>
-                )}
+                    <span>
+                      JPG, PNG or WEBP • MAX 5MB
+                    </span>
+                  </label>
 
-                <button
-                  className="submit-button"
-                  onClick={
-                    completePaymentSubmission
-                  }
-                  disabled={
-                    !transactionUploaded ||
-                    submitting
-                  }
-                >
-                  {submitting
-                    ? "SENDING TO ADMIN..."
-                    : "CONFIRM PAYMENT / SEND TO ADMIN"}
-                </button>
-              </section>
+                  {transactionPreview && (
+                    <div className="preview-box">
+                      <img
+                        src={
+                          transactionPreview
+                        }
+                        alt="Payment screenshot preview"
+                      />
+                    </div>
+                  )}
+
+                  {transactionUploaded && (
+                    <div className="upload-success">
+                      <span>
+                        ✓
+                      </span>
+
+                      <div>
+                        <strong>
+                          CONFIRMED
+                        </strong>
+
+                        <p>
+                          Screenshot uploaded successfully.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {uploadError && (
+                    <div className="upload-error">
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {submissionMessage && (
+                    <div className="submission-message">
+                      {submissionMessage}
+                    </div>
+                  )}
+
+                  <button
+                    className="submit-button"
+                    onClick={
+                      completePaymentSubmission
+                    }
+                    disabled={
+                      !transactionUploaded ||
+                      submitting
+                    }
+                  >
+                    {submitting
+                      ? "SENDING TO ADMIN..."
+                      : "CONFIRM PAYMENT / SEND TO ADMIN"}
+                  </button>
+                </section>
+              </>
             )}
           </>
         )}
@@ -1338,6 +1554,7 @@ export default function Page() {
               className="status-button"
               onClick={async () => {
                 setStatusOpen(true)
+
                 await loadPaymentStatus(
                   true
                 )
@@ -1347,13 +1564,6 @@ export default function Page() {
             </button>
           </section>
         )}
-
-        {submissionMessage &&
-          !isSubmitted && (
-            <div className="bottom-message">
-              {submissionMessage}
-            </div>
-          )}
       </section>
 
       <footer>
@@ -1387,13 +1597,16 @@ export default function Page() {
               className={`status-orb ${paymentStatus}`}
             >
               {paymentStatus ===
-                "confirmed" && "✓"}
+                "confirmed" &&
+                "✓"}
 
               {paymentStatus ===
-                "failed" && "!"}
+                "failed" &&
+                "!"}
 
               {paymentStatus ===
-                "pending" && "…"}
+                "pending" &&
+                "…"}
             </div>
 
             <div className="section-label">
@@ -1416,15 +1629,14 @@ export default function Page() {
                 ? "Your payment has been confirmed by the admin."
                 : paymentStatus ===
                   "failed"
-                ? "The admin could not confirm this payment. Please check your payment details."
-                : "Your payment has been received and is waiting for admin confirmation."}
+                ? "The admin could not confirm this payment."
+                : "Your payment is waiting for admin confirmation."}
             </p>
 
             <div
               className={`status-pill ${paymentStatus}`}
             >
               <span />
-
               {paymentStatus.toUpperCase()}
             </div>
 
@@ -1758,11 +1970,7 @@ export default function Page() {
 
         .order-details {
           display: grid;
-          grid-template-columns:
-            repeat(
-              3,
-              1fr
-            );
+          grid-template-columns: repeat(3, 1fr);
           gap: 10px;
         }
 
@@ -1824,11 +2032,7 @@ export default function Page() {
 
         .methods-grid {
           display: grid;
-          grid-template-columns:
-            repeat(
-              4,
-              1fr
-            );
+          grid-template-columns: repeat(4, 1fr);
           gap: 12px;
         }
 
@@ -1881,8 +2085,7 @@ export default function Page() {
               50,
               0.06
             );
-          animation: selectedPulse 2s
-            infinite;
+          animation: selectedPulse 2s infinite;
         }
 
         @keyframes selectedPulse {
@@ -1989,10 +2192,7 @@ export default function Page() {
         }
 
         .qr-box {
-          width: min(
-            260px,
-            80vw
-          );
+          width: min(260px, 80vw);
           margin: 15px auto;
           padding: 14px;
           background: #fff;
@@ -2207,8 +2407,7 @@ export default function Page() {
         }
 
         .timer.danger {
-          animation: timerDanger 0.7s
-            infinite;
+          animation: timerDanger 0.7s infinite;
         }
 
         @keyframes timerDanger {
@@ -2243,6 +2442,7 @@ export default function Page() {
           color: #777;
           font-size: 11px;
           margin-bottom: 0;
+          line-height: 1.6;
         }
 
         .upload-card {
@@ -2271,19 +2471,6 @@ export default function Page() {
           margin-top: 18px;
           cursor: pointer;
           background: #0a0a0a;
-          transition:
-            border-color 0.2s,
-            background 0.2s;
-        }
-
-        .upload-area:hover {
-          border-color: #ff1748;
-          background: rgba(
-            255,
-            0,
-            50,
-            0.04
-          );
         }
 
         .upload-area input {
@@ -2377,8 +2564,7 @@ export default function Page() {
           font-size: 12px;
         }
 
-        .submission-message,
-        .bottom-message {
+        .submission-message {
           margin-top: 13px;
           padding: 13px;
           border-radius: 11px;
@@ -2406,13 +2592,6 @@ export default function Page() {
           background: #e90038;
           font-size: 25px;
           font-weight: 900;
-          box-shadow:
-            0 0 30px rgba(
-              255,
-              0,
-              50,
-              0.3
-            );
         }
 
         .submitted-card h2 {
@@ -2460,17 +2639,6 @@ export default function Page() {
           display: grid;
           place-items: center;
           padding: 20px;
-          animation: fadeIn 0.25s ease;
-        }
-
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-
-          to {
-            opacity: 1;
-          }
         }
 
         .status-popup {
@@ -2481,18 +2649,7 @@ export default function Page() {
           );
           padding: 35px 25px 25px;
           border: 1px solid #292929;
-          background:
-            radial-gradient(
-              circle at 50% 0,
-              rgba(
-                255,
-                0,
-                50,
-                0.16
-              ),
-              transparent 45%
-            ),
-            #0b0b0b;
+          background: #0b0b0b;
           border-radius: 25px;
           text-align: center;
           box-shadow:
@@ -2502,27 +2659,6 @@ export default function Page() {
               0,
               0.6
             );
-          animation: popupIn 0.35s
-            cubic-bezier(
-              0.2,
-              0.8,
-              0.2,
-              1.2
-            );
-        }
-
-        @keyframes popupIn {
-          from {
-            opacity: 0;
-            transform: scale(0.85)
-              translateY(20px);
-          }
-
-          to {
-            opacity: 1;
-            transform: scale(1)
-              translateY(0);
-          }
         }
 
         .close-popup {
@@ -2550,50 +2686,21 @@ export default function Page() {
           font-weight: 950;
           background: #151515;
           border: 2px solid #555;
-          animation: orbPulse 2s
-            infinite;
         }
 
         .status-orb.pending {
           color: #ff3159;
           border-color: #ff3159;
-          box-shadow:
-            0 0 35px rgba(
-              255,
-              0,
-              50,
-              0.3
-            );
         }
 
         .status-orb.confirmed {
           color: #48d890;
           border-color: #48d890;
-          box-shadow:
-            0 0 35px rgba(
-              72,
-              216,
-              144,
-              0.25
-            );
         }
 
         .status-orb.failed {
           color: #ff3159;
           border-color: #ff3159;
-          box-shadow:
-            0 0 35px rgba(
-              255,
-              0,
-              50,
-              0.3
-            );
-        }
-
-        @keyframes orbPulse {
-          50% {
-            transform: scale(1.05);
-          }
         }
 
         .status-popup h2 {
@@ -2633,10 +2740,6 @@ export default function Page() {
 
         .status-pill.confirmed span {
           background: #48d890;
-        }
-
-        .status-pill.failed {
-          color: #ff3159;
         }
 
         .popup-order {
@@ -2744,16 +2847,11 @@ export default function Page() {
 
         @media (max-width: 700px) {
           .methods-grid {
-            grid-template-columns:
-              repeat(
-                2,
-                1fr
-              );
+            grid-template-columns: repeat(2, 1fr);
           }
 
           .order-details {
-            grid-template-columns:
-              1fr;
+            grid-template-columns: 1fr;
           }
 
           .section-heading-row {
