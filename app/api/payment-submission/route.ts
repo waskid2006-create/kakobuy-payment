@@ -4,13 +4,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
-    const orderId = String(
-      body?.orderId || ""
-    ).trim()
-
-    const email = String(
-      body?.email || ""
-    ).trim()
+    const orderId = String(body?.orderId || "").trim()
+    const email = String(body?.email || "").trim()
 
     if (!orderId) {
       return Response.json(
@@ -66,8 +61,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const currentOrder =
-      existingOrder[0]
+    const currentOrder = existingOrder[0]
 
     if (!currentOrder.transaction_image) {
       return Response.json(
@@ -86,13 +80,18 @@ export async function POST(request: Request) {
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-            payment_status =
-              COALESCE(payment_status, 'pending'),
+
+            -- Every new payment submission goes to
+            -- PENDING until the administrator reviews it.
+            payment_status = 'pending',
+
             updated_at = NOW()
+
           WHERE id = ${orderId}
             AND LOWER(TRIM(email)) =
                 LOWER(TRIM(${email}))
             AND transaction_image IS NOT NULL
+
           RETURNING
             id,
             full_name,
@@ -111,11 +110,16 @@ export async function POST(request: Request) {
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-            payment_status =
-              COALESCE(payment_status, 'pending'),
+
+            -- Every new payment submission goes to
+            -- PENDING until the administrator reviews it.
+            payment_status = 'pending',
+
             updated_at = NOW()
+
           WHERE id = ${orderId}
             AND transaction_image IS NOT NULL
+
           RETURNING
             id,
             full_name,
@@ -134,8 +138,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error:
-            "Unable to submit your payment.",
+          error: "Unable to submit your payment.",
         },
         { status: 500 }
       )
