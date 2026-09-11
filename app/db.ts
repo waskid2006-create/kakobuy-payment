@@ -1,7 +1,6 @@
 import { neon } from "@neondatabase/serverless"
 
-export const sql = neon(process.env.POSTGRES_URL!)
-
+export const sql = neon(process.env.KAKOBUY_DATABASE_URL!)
 export async function checkDatabase() {
   const result = await sql`
     SELECT
