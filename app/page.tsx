@@ -2089,24 +2089,17 @@ function formatTime(seconds: number) {
         }
 
         .hero h1 {
-          font-size: clamp(
-            34px,
-            7vw,
-            68px
-          );
-          line-height: 0.95;
-          margin: 0;
-          font-weight: 1000;
-          letter-spacing: -3px;
-          background: linear-gradient(
-            180deg,
-            #fff,
-            #aaa
-          );
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-        }
+  font-size: clamp(
+    34px,
+    7vw,
+    68px
+  );
+  line-height: 0.95;
+  margin: 0;
+  font-weight: 1000;
+  letter-spacing: -3px;
+  color: #fff;
+}
 
         .hero p {
           max-width: 650px;
