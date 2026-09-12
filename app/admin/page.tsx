@@ -682,22 +682,22 @@ async function saveLogo() {
             <div className="header-actions">
 
               <a
-                href="https://kakobuy-mini.vercel.app/"
-                target="_blank"
-                rel="noreferrer"
-                className="header-link"
-              >
-                PAGE 2
-              </a>
+  href="https://kakobuy-mini.vercel.app/admin"
+  target="_blank"
+  rel="noreferrer"
+  className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+>
+  PAGE 1
+</a>
 
-              <a
-                href="https://kakobuy-payment-page.vercel.app/"
-                target="_blank"
-                rel="noreferrer"
-                className="header-link"
-              >
-                PAGE 3
-              </a>
+<a
+  href="https://kakobuy-check-order.vercel.app/admin"
+  target="_blank"
+  rel="noreferrer"
+  className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+>
+  PAGE 2
+</a>
 
               <button
                 onClick={logout}
