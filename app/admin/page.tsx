@@ -422,47 +422,65 @@ export default function AdminPage() {
     reader.readAsDataURL(file)
   }
 
-  async function saveLogo() {
-    setSavingLogo(true)
-    setMessage("")
-    setError("")
-
-    try {
-      const response = await fetch("/api/site-settings", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          logo_url: logoUrl,
-        }),
-      })
-
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            "Unable to save logo."
-        )
-      }
-
-      setLogoFile(null)
-      setMessage("Kakobuy logo saved successfully.")
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to save logo."
-      )
-    } finally {
-      setSavingLogo(false)
-    }
+async function saveLogo() {
+  if (!logoFile) {
+    setError("Please select a logo image.")
+    return
   }
+
+  try {
+    setSavingLogo(true)
+    setError("")
+    setMessage("")
+
+    const formData = new FormData()
+
+    formData.append("logo", logoFile)
+
+    const response = await fetch(
+      "/api/site-settings",
+      {
+        method: "PUT",
+        body: formData,
+      }
+    )
+
+    const data =
+      await response.json().catch(
+        () => ({})
+      )
+
+    if (!response.ok || !data.success) {
+      throw new Error(
+        data?.error ||
+          "Unable to save logo."
+      )
+    }
+
+    setLogoUrl(
+      data.logo_url || ""
+    )
+
+    setLogoFile(null)
+
+    setMessage(
+      "Logo saved successfully."
+    )
+  } catch (error) {
+    console.error(
+      "Logo save error:",
+      error
+    )
+
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Unable to save logo."
+    )
+  } finally {
+    setSavingLogo(false)
+  }
+}
 
   async function removeLogo() {
     setLogoUrl("")
