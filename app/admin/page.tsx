@@ -465,6 +465,10 @@ export default function AdminPage() {
       | "confirmed"
       | "failed"
   ) {
+    console.log("ADMIN STATUS UPDATE:", {
+  orderId,
+  status,
+})
     setUpdatingOrder(orderId)
     setMessage("")
     setError("")
