@@ -2,10 +2,15 @@ import { sql } from "@/app/db"
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const formData = await request.formData()
 
-    const orderId = String(body?.orderId || "").trim()
-    const email = String(body?.email || "").trim()
+    const orderId = String(
+      formData.get("orderId") || ""
+    ).trim()
+
+    const email = String(
+      formData.get("email") || ""
+    ).trim()
 
     if (!orderId) {
       return Response.json(
@@ -17,6 +22,7 @@ export async function POST(request: Request) {
       )
     }
 
+    // Find the order
     const existingOrder = email
       ? await sql`
           SELECT
@@ -63,6 +69,7 @@ export async function POST(request: Request) {
 
     const currentOrder = existingOrder[0]
 
+    // Buyer must upload screenshot first
     if (!currentOrder.transaction_image) {
       return Response.json(
         {
@@ -74,24 +81,19 @@ export async function POST(request: Request) {
       )
     }
 
+    // Submit payment and set status to pending
     const result = email
       ? await sql`
           UPDATE orders
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-
-            -- Every new payment submission goes to
-            -- PENDING until the administrator reviews it.
             payment_status = 'pending',
-
             updated_at = NOW()
-
           WHERE id = ${orderId}
             AND LOWER(TRIM(email)) =
                 LOWER(TRIM(${email}))
             AND transaction_image IS NOT NULL
-
           RETURNING
             id,
             full_name,
@@ -110,16 +112,10 @@ export async function POST(request: Request) {
           SET
             transaction_submitted = true,
             transaction_submitted_at = NOW(),
-
-            -- Every new payment submission goes to
-            -- PENDING until the administrator reviews it.
             payment_status = 'pending',
-
             updated_at = NOW()
-
           WHERE id = ${orderId}
             AND transaction_image IS NOT NULL
-
           RETURNING
             id,
             full_name,
