@@ -13,7 +13,11 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData()
 
-    const file = form.get("file")
+    // Accept the field name used by the buyer page.
+    // Also accept "file" for compatibility.
+    const file =
+      form.get("image") ||
+      form.get("file")
 
     const orderId = String(
       form.get("orderId") || ""
@@ -47,7 +51,8 @@ export async function POST(request: Request) {
       return Response.json(
         {
           success: false,
-          error: "Only JPG, PNG, and WEBP images are allowed.",
+          error:
+            "Only JPG, PNG, and WEBP images are allowed.",
         },
         { status: 400 }
       )
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
       )
     }
 
+    // Verify the order
     const orderCheck = email
       ? await sql`
           SELECT id, email
@@ -121,15 +127,18 @@ export async function POST(request: Request) {
       )
     }
 
+    // Upload screenshot to Vercel Blob
     const blob = await put(
-  filename,
-  file,
-  {
-    access: "public",
-    addRandomSuffix: true,
-    storeId: process.env.BLOB_STORE_ID,
-  }
-)
+      filename,
+      file,
+      {
+        access: "public",
+        addRandomSuffix: true,
+        storeId,
+      }
+    )
+
+    // Save screenshot URL to the order
     const updated = email
       ? await sql`
           UPDATE orders
@@ -189,7 +198,8 @@ export async function POST(request: Request) {
       success: true,
       uploaded: true,
       confirmed: true,
-      message: "Transaction screenshot uploaded successfully.",
+      message:
+        "Transaction screenshot uploaded successfully.",
       image: blob.url,
       transaction_image: blob.url,
       order: updated[0],
