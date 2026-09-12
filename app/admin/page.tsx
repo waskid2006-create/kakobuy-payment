@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { ChangeEvent, useEffect, useState } from "react"
 
 type PaymentMethod = {
   id: string
@@ -8,30 +8,18 @@ type PaymentMethod = {
   information: string
   wallet_address: string
   qr_image_url: string
-  hero_heading: string
-  hero_subtitle: string
-  footer_text: string
 }
 
 type Order = {
   id: number | string
   product_name?: string
-  productName?: string
   full_name?: string
-  fullName?: string
   email?: string
-  phone?: string
   total?: number | string
   payment_status?: string
-  paymentStatus?: string
   payment_method?: string
-  paymentMethod?: string
   transaction_image?: string
-  transactionImage?: string
-  transaction_submitted_at?: string
-  transaction_submittedAt?: string
   created_at?: string
-  createdAt?: string
 }
 
 const COINS = [
@@ -47,9 +35,6 @@ const emptyMethod = (id: string, name: string): PaymentMethod => ({
   information: "",
   wallet_address: "",
   qr_image_url: "",
-  hero_heading: "Complete Your Payment",
-  hero_subtitle: "Send the exact amount to the wallet below.",
-  footer_text: "Kakobuy payment service",
 })
 
 export default function AdminPage() {
@@ -59,6 +44,8 @@ export default function AdminPage() {
   const [logoUrl, setLogoUrl] = useState("")
   const [logoFile, setLogoFile] = useState<File | null>(null)
 
+  const [selectedCoin, setSelectedCoin] = useState("bitcoin")
+
   const [methods, setMethods] = useState<Record<string, PaymentMethod>>({
     bitcoin: emptyMethod("bitcoin", "Bitcoin"),
     ethereum: emptyMethod("ethereum", "Ethereum"),
@@ -66,7 +53,6 @@ export default function AdminPage() {
     binance: emptyMethod("binance", "Binance"),
   })
 
-  const [selectedCoin, setSelectedCoin] = useState("bitcoin")
   const [orders, setOrders] = useState<Order[]>([])
 
   const [loading, setLoading] = useState(true)
@@ -74,33 +60,36 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false)
   const [savingLogo, setSavingLogo] = useState(false)
 
-  const [updatingOrder, setUpdatingOrder] = useState<
-    number | string | null
-  >(null)
-
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
   const [previewImage, setPreviewImage] = useState("")
+  const [updatingOrder, setUpdatingOrder] = useState<number | string | null>(null)
 
   const currentMethod =
     methods[selectedCoin] ||
     emptyMethod(
       selectedCoin,
-      COINS.find((coin) => coin.id === selectedCoin)?.name ||
-        selectedCoin
+      COINS.find((coin) => coin.id === selectedCoin)?.name || selectedCoin
     )
 
   useEffect(() => {
     checkAdmin()
   }, [])
 
+  useEffect(() => {
+    if (!authorized) return
+
+    const timer = setInterval(() => {
+      loadOrders()
+    }, 5000)
+
+    return () => clearInterval(timer)
+  }, [authorized])
+
   async function checkAdmin() {
     try {
-      setCheckingAuth(true)
-
       const response = await fetch("/api/admin-check", {
-        method: "GET",
         cache: "no-store",
       })
 
@@ -116,8 +105,7 @@ export default function AdminPage() {
       setCheckingAuth(false)
 
       await loadEverything()
-    } catch (err) {
-      console.error(err)
+    } catch {
       setAuthorized(false)
       setCheckingAuth(false)
     }
@@ -125,40 +113,28 @@ export default function AdminPage() {
 
   async function loadEverything() {
     setLoading(true)
-    setError("")
 
-    try {
-      await Promise.all([
-        loadLogo(),
-        loadPaymentMethods(),
-        loadOrders(),
-      ])
-    } catch (err) {
-      console.error(err)
-      setError("Some admin information could not be loaded.")
-    } finally {
-      setLoading(false)
-    }
+    await Promise.all([
+      loadLogo(),
+      loadPaymentMethods(),
+      loadOrders(),
+    ])
+
+    setLoading(false)
   }
 
   async function loadLogo() {
     try {
-      const response = await fetch("/api/site-settings", {
-        cache: "no-store",
-      })
+      const response = await fetch(
+        "/api/site-settings",
+        { cache: "no-store" }
+      )
 
       if (!response.ok) return
 
       const data = await response.json()
 
-      const logo =
-        data?.logo_url ||
-        data?.logoUrl ||
-        data?.settings?.logo_url ||
-        data?.settings?.logoUrl ||
-        ""
-
-      setLogoUrl(logo)
+      setLogoUrl(data?.logo_url || "")
     } catch (err) {
       console.error("Logo load error:", err)
     }
@@ -176,10 +152,7 @@ export default function AdminPage() {
       try {
         const response = await fetch(
           `/api/payment-methods?id=${encodeURIComponent(coin.id)}`,
-          {
-            method: "GET",
-            cache: "no-store",
-          }
+          { cache: "no-store" }
         )
 
         if (!response.ok) continue
@@ -197,10 +170,7 @@ export default function AdminPage() {
         updated[coin.id] = {
           id: source.id || coin.id,
           name: source.name || coin.name,
-          information:
-            source.information ||
-            source.info ||
-            "",
+          information: source.information || "",
           wallet_address:
             source.wallet_address ||
             source.walletAddress ||
@@ -209,21 +179,12 @@ export default function AdminPage() {
             source.qr_image_url ||
             source.qrImageUrl ||
             "",
-          hero_heading:
-            source.hero_heading ||
-            source.heroHeading ||
-            "Complete Your Payment",
-          hero_subtitle:
-            source.hero_subtitle ||
-            source.heroSubtitle ||
-            "Send the exact amount to the wallet below.",
-          footer_text:
-            source.footer_text ||
-            source.footerText ||
-            "Kakobuy payment service",
         }
       } catch (err) {
-        console.error(`Failed to load ${coin.id}:`, err)
+        console.error(
+          `Failed to load ${coin.id}:`,
+          err
+        )
       }
     }
 
@@ -234,10 +195,10 @@ export default function AdminPage() {
     try {
       setLoadingOrders(true)
 
-      const response = await fetch("/api/payment-status", {
-        method: "GET",
-        cache: "no-store",
-      })
+      const response = await fetch(
+        "/api/payment-status",
+        { cache: "no-store" }
+      )
 
       if (!response.ok) {
         setOrders([])
@@ -252,24 +213,18 @@ export default function AdminPage() {
         data?.payments ||
         []
 
-      setOrders(Array.isArray(list) ? list : [])
+      setOrders(
+        Array.isArray(list) ? list : []
+      )
     } catch (err) {
-      console.error("Orders load error:", err)
-      setOrders([])
+      console.error(
+        "Orders load error:",
+        err
+      )
     } finally {
       setLoadingOrders(false)
     }
   }
-
-  useEffect(() => {
-    if (!authorized) return
-
-    const interval = setInterval(() => {
-      loadOrders()
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [authorized])
 
   function updateMethod(
     field: keyof PaymentMethod,
@@ -287,39 +242,203 @@ export default function AdminPage() {
     setError("")
   }
 
+  function handleLogoImage(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    if (
+      ![
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ].includes(file.type)
+    ) {
+      setError(
+        "Logo must be JPG, PNG or WEBP."
+      )
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError(
+        "Logo must be smaller than 5MB."
+      )
+      return
+    }
+
+    setLogoFile(file)
+
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      if (
+        typeof reader.result === "string"
+      ) {
+        setLogoUrl(reader.result)
+      }
+    }
+
+    reader.readAsDataURL(file)
+
+    setMessage(
+      "Logo selected. Click SAVE LOGO."
+    )
+    setError("")
+  }
+
+  function handleQrImage(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    if (
+      ![
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ].includes(file.type)
+    ) {
+      setError(
+        "QR image must be JPG, PNG or WEBP."
+      )
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError(
+        "QR image must be smaller than 5MB."
+      )
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      if (
+        typeof reader.result === "string"
+      ) {
+        updateMethod(
+          "qr_image_url",
+          reader.result
+        )
+      }
+    }
+
+    reader.readAsDataURL(file)
+
+    setMessage(
+      "QR selected. Click SAVE."
+    )
+  }
+
+  async function saveLogo() {
+    if (!logoFile) {
+      setError(
+        "Please select a logo image."
+      )
+      return
+    }
+
+    try {
+      setSavingLogo(true)
+      setError("")
+      setMessage("")
+
+      const formData = new FormData()
+
+      formData.append(
+        "logo",
+        logoFile
+      )
+
+      const response = await fetch(
+        "/api/site-settings",
+        {
+          method: "PUT",
+          body: formData,
+        }
+      )
+
+      const data =
+        await response.json().catch(
+          () => ({})
+        )
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data?.error ||
+            "Unable to save logo."
+        )
+      }
+
+      setLogoUrl(
+        data.logo_url || ""
+      )
+
+      setLogoFile(null)
+
+      setMessage(
+        "Logo saved successfully."
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save logo."
+      )
+    } finally {
+      setSavingLogo(false)
+    }
+  }
+
   async function savePaymentMethod() {
     setSaving(true)
     setMessage("")
     setError("")
 
     try {
-      const method = methods[selectedCoin]
+      const method =
+        methods[selectedCoin]
 
-      const response = await fetch("/api/payment-methods", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          id: selectedCoin,
-          name: method.name,
-          information: method.information,
-          wallet_address: method.wallet_address,
-          qr_image_url: method.qr_image_url,
-          hero_heading: method.hero_heading,
-          hero_subtitle: method.hero_subtitle,
-          footer_text: method.footer_text,
-        }),
-      })
+      const response = await fetch(
+        "/api/payment-methods",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            id: selectedCoin,
+            name: method.name,
+            information:
+              method.information,
+            wallet_address:
+              method.wallet_address,
+            qr_image_url:
+              method.qr_image_url,
+          }),
+        }
+      )
 
-      const data = await response.json().catch(() => ({}))
+      const data =
+        await response.json().catch(
+          () => ({})
+        )
 
       if (!response.ok) {
         throw new Error(
           data?.error ||
-            data?.message ||
-            "Unable to save payment settings."
+            "Unable to save changes."
         )
       }
 
@@ -329,8 +448,6 @@ export default function AdminPage() {
 
       await loadPaymentMethods()
     } catch (err) {
-      console.error(err)
-
       setError(
         err instanceof Error
           ? err.message
@@ -341,228 +458,51 @@ export default function AdminPage() {
     }
   }
 
-  function handleQrImage(
-    event: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    const allowed = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ]
-
-    if (!allowed.includes(file.type)) {
-      setError("QR image must be JPG, PNG or WEBP.")
-      event.target.value = ""
-      return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError("QR image must be smaller than 5MB.")
-      event.target.value = ""
-      return
-    }
-
-    const reader = new FileReader()
-
-    reader.onload = () => {
-      if (typeof reader.result !== "string") return
-
-      updateMethod("qr_image_url", reader.result)
-      setMessage("QR image selected. Click SAVE.")
-    }
-
-    reader.readAsDataURL(file)
-  }
-
-  function removeQr() {
-    updateMethod("qr_image_url", "")
-    setMessage("QR image removed. Click SAVE.")
-  }
-
-  function handleLogoImage(
-    event: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    const allowed = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ]
-
-    if (!allowed.includes(file.type)) {
-      setError("Logo must be JPG, PNG or WEBP.")
-      event.target.value = ""
-      return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Logo must be smaller than 5MB.")
-      event.target.value = ""
-      return
-    }
-
-    setLogoFile(file)
-
-    const reader = new FileReader()
-
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setLogoUrl(reader.result)
-        setMessage("Logo selected. Click SAVE LOGO.")
-      }
-    }
-
-    reader.readAsDataURL(file)
-  }
-
-async function saveLogo() {
-  if (!logoFile) {
-    setError("Please select a logo image.")
-    return
-  }
-
-  try {
-    setSavingLogo(true)
-    setError("")
-    setMessage("")
-
-    const formData = new FormData()
-
-    formData.append("logo", logoFile)
-
-    const response = await fetch(
-      "/api/site-settings",
-      {
-        method: "PUT",
-        body: formData,
-      }
-    )
-
-    const data =
-      await response.json().catch(
-        () => ({})
-      )
-
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data?.error ||
-          "Unable to save logo."
-      )
-    }
-
-    setLogoUrl(
-      data.logo_url || ""
-    )
-
-    setLogoFile(null)
-
-    setMessage(
-      "Logo saved successfully."
-    )
-  } catch (error) {
-    console.error(
-      "Logo save error:",
-      error
-    )
-
-    setError(
-      error instanceof Error
-        ? error.message
-        : "Unable to save logo."
-    )
-  } finally {
-    setSavingLogo(false)
-  }
-}
-
-  async function removeLogo() {
-    setLogoUrl("")
-    setLogoFile(null)
-
-    setSavingLogo(true)
-    setMessage("")
-    setError("")
-
-    try {
-      const response = await fetch("/api/site-settings", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          logo_url: "",
-        }),
-      })
-
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            "Unable to remove logo."
-        )
-      }
-
-      setMessage("Logo removed successfully.")
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to remove logo."
-      )
-    } finally {
-      setSavingLogo(false)
-    }
-  }
-
   async function updateOrderStatus(
     orderId: number | string,
-    status: "pending" | "confirmed" | "failed"
+    status:
+      | "pending"
+      | "confirmed"
+      | "failed"
   ) {
     setUpdatingOrder(orderId)
     setMessage("")
     setError("")
 
     try {
-      const response = await fetch("/api/payment-status", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          id: orderId,
-          status,
-        }),
-      })
+      const response = await fetch(
+        "/api/payment-status",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            id: orderId,
+            status,
+          }),
+        }
+      )
 
-      const data = await response.json().catch(() => ({}))
+      const data =
+        await response.json().catch(
+          () => ({})
+        )
 
       if (!response.ok) {
         throw new Error(
           data?.error ||
-            data?.message ||
             "Unable to update payment status."
         )
       }
 
-      setMessage(`Order #${orderId} marked ${status}.`)
+      setMessage(
+        `Order #${orderId} marked ${status}.`
+      )
 
       await loadOrders()
     } catch (err) {
-      console.error(err)
-
       setError(
         err instanceof Error
           ? err.message
@@ -575,15 +515,17 @@ async function saveLogo() {
 
   async function logout() {
     try {
-      await fetch("/api/admin-logout", {
-        method: "POST",
-        credentials: "include",
-      })
-    } catch (err) {
-      console.error(err)
+      await fetch(
+        "/api/admin-logout",
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      )
+    } finally {
+      window.location.href =
+        "/admin/login"
     }
-
-    window.location.href = "/admin/login"
   }
 
   if (checkingAuth) {
@@ -591,12 +533,19 @@ async function saveLogo() {
       <>
         <style>{styles}</style>
 
-        <main className="admin-page loading-page">
+        <main className="admin-page center-page">
           <div className="loading-box">
-            <div className="big-logo">K</div>
+            <div className="big-logo">
+              K
+            </div>
+
             <h1>KAKOBUY</h1>
+
             <div className="spinner" />
-            <p>Checking admin access...</p>
+
+            <p>
+              Checking admin access...
+            </p>
           </div>
         </main>
       </>
@@ -608,33 +557,29 @@ async function saveLogo() {
       <>
         <style>{styles}</style>
 
-        <main className="admin-page">
-          <div className="login-required">
-            <div className="big-logo">K</div>
+        <main className="admin-page center-page">
+          <div className="loading-box">
+            <div className="big-logo">
+              K
+            </div>
 
-            <h1>Admin Login Required</h1>
+            <h1>
+              Admin Login Required
+            </h1>
 
             <p>
-              You need to log in before opening the
+              Please log in to open the
               Kakobuy admin dashboard.
             </p>
 
             <button
               className="red-button full"
               onClick={() =>
-                (window.location.href = "/admin/login")
+                (window.location.href =
+                  "/admin/login")
               }
             >
               LOGIN
-            </button>
-
-            <button
-              className="dark-button full"
-              onClick={() =>
-                (window.location.href = "/")
-              }
-            >
-              GO BACK
             </button>
           </div>
         </main>
@@ -648,14 +593,18 @@ async function saveLogo() {
 
       <main className="admin-page">
 
-        <div className="glow glow-one" />
-        <div className="glow glow-two" />
+        <div className="floating-orb orb-one" />
+        <div className="floating-orb orb-two" />
+        <div className="floating-orb orb-three" />
 
         {/* HEADER */}
+
         <header className="admin-header">
+
           <div className="header-inner">
 
             <div className="brand-area">
+
               {logoUrl ? (
                 <img
                   src={logoUrl}
@@ -674,44 +623,45 @@ async function saveLogo() {
                 </div>
 
                 <div className="brand-small">
-                  Admin Dashboard
+                  ADMIN DASHBOARD
                 </div>
               </div>
+
             </div>
+
+            {/* MOBILE-VISIBLE NAV BUTTONS */}
 
             <div className="header-actions">
 
               <a
-  href="https://kakobuy-mini.vercel.app/admin"
-  target="_blank"
-  rel="noreferrer"
-  className="group relative overflow-hidden rounded-xl border border-red-500/40 bg-gradient-to-r from-red-950/60 to-black px-4 py-2.5 text-xs font-bold tracking-wide text-white shadow-[0_0_18px_rgba(239,68,68,0.12)] transition-all duration-300 hover:border-red-500 hover:shadow-[0_0_25px_rgba(239,68,68,0.35)]"
->
-  <span className="relative z-10 flex items-center gap-2">
-    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-600/20 text-red-400">
-      1
-    </span>
-    PAGE 1
-  </span>
+                href="https://kakobuy-mini.vercel.app/admin"
+                target="_blank"
+                rel="noreferrer"
+                className="nav-button page-one"
+              >
+                <span className="nav-number">
+                  01
+                </span>
 
-  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-red-500/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-</a>
+                <span>
+                  PAGE 1
+                </span>
+              </a>
 
-<a
-  href="https://kakobuy-check-order.vercel.app/admin"
-  target="_blank"
-  rel="noreferrer"
-  className="group relative overflow-hidden rounded-xl border border-red-500/40 bg-gradient-to-r from-red-950/60 to-black px-4 py-2.5 text-xs font-bold tracking-wide text-white shadow-[0_0_18px_rgba(239,68,68,0.12)] transition-all duration-300 hover:border-red-500 hover:shadow-[0_0_25px_rgba(239,68,68,0.35)]"
->
-  <span className="relative z-10 flex items-center gap-2">
-    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-600/20 text-red-400">
-      2
-    </span>
-    PAGE 2
-  </span>
+              <a
+                href="https://kakobuy-check-order.vercel.app/admin"
+                target="_blank"
+                rel="noreferrer"
+                className="nav-button page-two"
+              >
+                <span className="nav-number">
+                  02
+                </span>
 
-  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-red-500/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-</a>
+                <span>
+                  PAGE 2
+                </span>
+              </a>
 
               <button
                 onClick={logout}
@@ -721,41 +671,49 @@ async function saveLogo() {
               </button>
 
             </div>
+
           </div>
+
         </header>
+
+        {/* MAIN */}
 
         <div className="dashboard">
 
-          {/* HERO */}
-          <section className="dashboard-hero">
+          <section className="hero">
+
             <div>
               <div className="eyebrow">
                 KAKOBUY CONTROL CENTER
               </div>
 
-              <h1>Payment Control</h1>
+              <h1>
+                Payment Control
+              </h1>
 
               <p>
-                Manage payment methods, wallet addresses,
-                QR codes and buyer payment submissions.
+                Manage payment methods,
+                wallet addresses, QR codes
+                and buyer payment
+                submissions.
               </p>
             </div>
 
-            <div className="live-indicator">
+            <div className="live">
               <span />
               LIVE
             </div>
+
           </section>
 
-          {/* MESSAGE */}
           {message && (
-            <div className="success-message">
+            <div className="success">
               ✓ {message}
             </div>
           )}
 
           {error && (
-            <div className="error-message">
+            <div className="error">
               ⚠ {error}
             </div>
           )}
@@ -763,166 +721,175 @@ async function saveLogo() {
           {loading ? (
             <div className="loading-card">
               <div className="spinner" />
-              <p>Loading admin dashboard...</p>
+              <p>
+                Loading dashboard...
+              </p>
             </div>
           ) : (
-            <div className="dashboard-content">
+            <>
 
               {/* LOGO */}
+
               <section className="card">
 
-                <div className="card-heading">
-                  <div>
-                    <div className="section-number">
-                      01
-                    </div>
+                <div className="section-head">
+                  <span>
+                    01
+                  </span>
 
-                    <h2>Shared Kakobuy Logo</h2>
+                  <h2>
+                    Shared Kakobuy Logo
+                  </h2>
 
-                    <p>
-                      Change the logo displayed across
-                      your Kakobuy payment experience.
-                    </p>
-                  </div>
+                  <p>
+                    Change the logo displayed
+                    across your Kakobuy
+                    payment experience.
+                  </p>
                 </div>
 
                 <div className="logo-editor">
 
                   <div className="logo-preview">
+
                     {logoUrl ? (
                       <img
                         src={logoUrl}
-                        alt="Kakobuy logo preview"
+                        alt="Logo preview"
                       />
                     ) : (
-                      <span>K</span>
+                      <span>
+                        K
+                      </span>
                     )}
+
                   </div>
 
-                  <div className="editor-actions">
+                  <div className="logo-controls">
 
-                    <label className="field-label">
+                    <label>
                       Upload Logo
                     </label>
 
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      onChange={handleLogoImage}
-                      className="file-input"
+                      onChange={
+                        handleLogoImage
+                      }
                     />
 
-                    <div className="button-row">
+                    <button
+                      onClick={saveLogo}
+                      disabled={
+                        savingLogo
+                      }
+                      className="save-button"
+                    >
+                      {savingLogo
+                        ? "SAVING..."
+                        : "SAVE LOGO"}
+                    </button>
 
-                      <button
-                        onClick={saveLogo}
-                        disabled={savingLogo}
-                        className="red-button"
-                      >
-                        {savingLogo
-                          ? "SAVING..."
-                          : "SAVE LOGO"}
-                      </button>
-
-                      <button
-                        onClick={removeLogo}
-                        disabled={savingLogo}
-                        className="dark-button"
-                      >
-                        REMOVE
-                      </button>
-
-                    </div>
                   </div>
+
                 </div>
+
               </section>
 
               {/* PAYMENT METHODS */}
+
               <section className="card">
 
-                <div className="card-heading">
-                  <div>
-                    <div className="section-number">
-                      02
-                    </div>
+                <div className="section-head">
+                  <span>
+                    02
+                  </span>
 
-                    <h2>Payment Methods</h2>
+                  <h2>
+                    Payment Methods
+                  </h2>
 
-                    <p>
-                      Select a payment method and edit
-                      what buyers see on Page 3.
-                    </p>
-                  </div>
+                  <p>
+                    Select a payment method
+                    and manage its wallet,
+                    code and QR.
+                  </p>
                 </div>
 
-                {/* COINS */}
                 <div className="coin-grid">
 
-                  {COINS.map((coin) => {
-                    const selected =
-                      selectedCoin === coin.id
-
-                    return (
+                  {COINS.map(
+                    (coin) => (
                       <button
                         key={coin.id}
-                        onClick={() => {
-                          setSelectedCoin(coin.id)
-                          setMessage("")
-                          setError("")
-                        }}
-                        className={`coin-card ${
-                          selected ? "coin-selected" : ""
-                        }`}
+                        onClick={() =>
+                          setSelectedCoin(
+                            coin.id
+                          )
+                        }
+                        className={
+                          selectedCoin ===
+                          coin.id
+                            ? "coin selected"
+                            : "coin"
+                        }
                       >
-                        <div className="coin-symbol">
+
+                        <strong>
                           {coin.symbol}
-                        </div>
+                        </strong>
 
-                        <div className="coin-name">
+                        <span>
                           {coin.name}
-                        </div>
+                        </span>
 
-                        {selected && (
-                          <div className="selected-label">
+                        {selectedCoin ===
+                          coin.id && (
+                          <small>
                             SELECTED
-                          </div>
+                          </small>
                         )}
+
                       </button>
                     )
-                  })}
+                  )}
 
                 </div>
 
-                {/* FORM */}
-                <div className="settings-form">
+                <div className="form">
 
-                  <div className="form-group">
+                  <div>
                     <label>
                       Payment Name
                     </label>
 
                     <input
-                      value={currentMethod.name}
-                      onChange={(event) =>
+                      value={
+                        currentMethod.name
+                      }
+                      onChange={(e) =>
                         updateMethod(
                           "name",
-                          event.target.value
+                          e.target.value
                         )
                       }
                     />
                   </div>
 
-                  <div className="form-group">
+                  <div>
                     <label>
                       Wallet Address
                     </label>
 
                     <textarea
-                      value={currentMethod.wallet_address}
-                      onChange={(event) =>
+                      value={
+                        currentMethod.wallet_address
+                      }
+                      onChange={(e) =>
                         updateMethod(
                           "wallet_address",
-                          event.target.value
+                          e.target.value
                         )
                       }
                       rows={3}
@@ -930,102 +897,41 @@ async function saveLogo() {
                     />
                   </div>
 
-                  <div className="form-group">
+                  <div>
                     <label>
-                      Payment Information
+                      Payment Information /
+                      Code
                     </label>
 
                     <textarea
-                      value={currentMethod.information}
-                      onChange={(event) =>
+                      value={
+                        currentMethod.information
+                      }
+                      onChange={(e) =>
                         updateMethod(
                           "information",
-                          event.target.value
+                          e.target.value
                         )
                       }
                       rows={5}
-                      placeholder="Payment instructions..."
+                      placeholder="Enter payment information or code..."
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>
-                      Hero Heading
-                    </label>
+                  <div className="qr-section">
 
-                    <input
-                      value={currentMethod.hero_heading}
-                      onChange={(event) =>
-                        updateMethod(
-                          "hero_heading",
-                          event.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>
-                      Hero Subtitle
-                    </label>
-
-                    <textarea
-                      value={currentMethod.hero_subtitle}
-                      onChange={(event) =>
-                        updateMethod(
-                          "hero_subtitle",
-                          event.target.value
-                        )
-                      }
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>
-                      Footer Text
-                    </label>
-
-                    <input
-                      value={currentMethod.footer_text}
-                      onChange={(event) =>
-                        updateMethod(
-                          "footer_text",
-                          event.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  {/* QR */}
-                  <div className="qr-box">
-
-                    <div className="qr-heading">
-                      <div>
-                        <h3>QR Code</h3>
-                        <p>
-                          JPG, PNG or WEBP · Maximum 5MB
-                        </p>
-                      </div>
-                    </div>
+                    <h3>
+                      QR Code
+                    </h3>
 
                     {currentMethod.qr_image_url ? (
-                      <div className="qr-content">
-
-                        <div className="qr-preview">
-                          <img
-                            src={currentMethod.qr_image_url}
-                            alt={`${currentMethod.name} QR code`}
-                          />
-                        </div>
-
-                        <button
-                          onClick={removeQr}
-                          className="remove-button"
-                        >
-                          REMOVE QR
-                        </button>
-
+                      <div className="qr-preview">
+                        <img
+                          src={
+                            currentMethod.qr_image_url
+                          }
+                          alt="QR code"
+                        />
                       </div>
                     ) : (
                       <div className="no-qr">
@@ -1036,16 +942,19 @@ async function saveLogo() {
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      onChange={handleQrImage}
-                      className="file-input"
+                      onChange={
+                        handleQrImage
+                      }
                     />
 
                   </div>
 
                   <button
-                    onClick={savePaymentMethod}
+                    onClick={
+                      savePaymentMethod
+                    }
                     disabled={saving}
-                    className="save-payment-button"
+                    className="save-payment"
                   >
                     {saving
                       ? "SAVING..."
@@ -1053,30 +962,34 @@ async function saveLogo() {
                   </button>
 
                 </div>
+
               </section>
 
               {/* PAYMENTS */}
+
               <section className="card">
 
-                <div className="payment-heading">
+                <div className="payments-header">
 
                   <div>
-                    <div className="section-number">
+                    <span className="section-number">
                       03
-                    </div>
+                    </span>
 
-                    <h2>Payment Submissions</h2>
+                    <h2>
+                      Payment Submissions
+                    </h2>
 
                     <p>
-                      Review buyer payments and manually
-                      confirm or reject transactions.
+                      Review buyer payments
+                      and confirm or reject
+                      transactions.
                     </p>
                   </div>
 
                   <button
                     onClick={loadOrders}
-                    disabled={loadingOrders}
-                    className="refresh-button"
+                    className="refresh"
                   >
                     {loadingOrders
                       ? "REFRESHING..."
@@ -1086,239 +999,200 @@ async function saveLogo() {
                 </div>
 
                 {orders.length === 0 ? (
-                  <div className="empty-payments">
-                    <div className="empty-icon">
-                      ◉
-                    </div>
-
-                    <h3>
+                  <div className="empty">
+                    <strong>
                       No payment submissions
-                    </h3>
+                    </strong>
 
                     <p>
-                      New buyer payment submissions
-                      will appear here automatically.
+                      New buyer payment
+                      submissions will
+                      appear here.
                     </p>
                   </div>
                 ) : (
-                  <div className="orders-list">
+                  <div className="orders">
 
-                    {orders.map((order) => {
+                    {orders.map(
+                      (order) => {
 
-                      const status =
-                        order.payment_status ||
-                        order.paymentStatus ||
-                        "pending"
+                        const status =
+                          (
+                            order.payment_status ||
+                            "pending"
+                          ).toLowerCase()
 
-                      const image =
-                        order.transaction_image ||
-                        order.transactionImage ||
-                        ""
+                        const image =
+                          order.transaction_image ||
+                          ""
 
-                      const product =
-                        order.product_name ||
-                        order.productName ||
-                        "Order"
-
-                      const customer =
-                        order.full_name ||
-                        order.fullName ||
-                        "Customer"
-
-                      const paymentMethod =
-                        order.payment_method ||
-                        order.paymentMethod ||
-                        "Not specified"
-
-                      const total =
-                        order.total ?? ""
-
-                      const created =
-                        order.transaction_submitted_at ||
-                        order.transaction_submittedAt ||
-                        order.created_at ||
-                        order.createdAt ||
-                        ""
-
-                      return (
-                        <div
-                          key={String(order.id)}
-                          className="order-card"
-                        >
-
-                          <div className="order-top">
+                        return (
+                          <div
+                            key={
+                              String(
+                                order.id
+                              )
+                            }
+                            className="order"
+                          >
 
                             <div className="order-info">
 
-                              <div className="order-title-row">
+                              <small>
+                                ORDER #
+                                {
+                                  order.id
+                                }
+                              </small>
 
-                                <h3>
-                                  Order #{order.id}
-                                </h3>
+                              <h3>
+                                {
+                                  order.product_name ||
+                                  "Order"
+                                }
+                              </h3>
 
-                                <span
-                                  className={`status status-${status}`}
-                                >
-                                  {status}
-                                </span>
+                              <p>
+                                CUSTOMER:{" "}
+                                {
+                                  order.full_name ||
+                                  "—"
+                                }
+                              </p>
 
-                              </div>
+                              <p>
+                                METHOD:{" "}
+                                {
+                                  order.payment_method ||
+                                  "—"
+                                }
+                              </p>
 
-                              <div className="order-details">
+                              <p>
+                                TOTAL:{" "}
+                                {
+                                  order.total ||
+                                  "—"
+                                }
+                              </p>
 
-                                <div>
-                                  <span>
-                                    PRODUCT
-                                  </span>
-                                  {product}
-                                </div>
-
-                                <div>
-                                  <span>
-                                    CUSTOMER
-                                  </span>
-                                  {customer}
-                                </div>
-
-                                {order.email && (
-                                  <div>
-                                    <span>
-                                      EMAIL
-                                    </span>
-                                    <b className="break">
-                                      {order.email}
-                                    </b>
-                                  </div>
-                                )}
-
-                                <div>
-                                  <span>
-                                    PAYMENT
-                                  </span>
-                                  {paymentMethod}
-                                </div>
-
-                                <div>
-                                  <span>
-                                    TOTAL
-                                  </span>
-                                  {total}
-                                </div>
-
-                                {created && (
-                                  <div className="date">
-                                    {new Date(
-                                      created
-                                    ).toLocaleString()}
-                                  </div>
-                                )}
-
-                              </div>
                             </div>
 
-                            {image && (
-                              <button
-                                className="transaction-image-button"
-                                onClick={() =>
-                                  setPreviewImage(image)
-                                }
+                            <div className="order-actions">
+
+                              <div
+                                className={`status ${status}`}
                               >
-                                <img
-                                  src={image}
-                                  alt="Transaction screenshot"
-                                />
+                                {status.toUpperCase()}
+                              </div>
 
-                                <span>
-                                  VIEW PAYMENT
-                                </span>
-                              </button>
-                            )}
+                              {image && (
+                                <button
+                                  className="view-image"
+                                  onClick={() =>
+                                    setPreviewImage(
+                                      image
+                                    )
+                                  }
+                                >
+                                  VIEW SCREENSHOT
+                                </button>
+                              )}
+
+                              <div className="status-buttons">
+
+                                <button
+                                  onClick={() =>
+                                    updateOrderStatus(
+                                      order.id,
+                                      "pending"
+                                    )
+                                  }
+                                  disabled={
+                                    updatingOrder ===
+                                    order.id
+                                  }
+                                  className="pending"
+                                >
+                                  PENDING
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    updateOrderStatus(
+                                      order.id,
+                                      "confirmed"
+                                    )
+                                  }
+                                  disabled={
+                                    updatingOrder ===
+                                    order.id
+                                  }
+                                  className="confirmed"
+                                >
+                                  CONFIRMED
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    updateOrderStatus(
+                                      order.id,
+                                      "failed"
+                                    )
+                                  }
+                                  disabled={
+                                    updatingOrder ===
+                                    order.id
+                                  }
+                                  className="failed"
+                                >
+                                  FAILED
+                                </button>
+
+                              </div>
+
+                            </div>
 
                           </div>
-
-                          {/* STATUS */}
-                          <div className="status-controls">
-
-                            <button
-                              onClick={() =>
-                                updateOrderStatus(
-                                  order.id,
-                                  "pending"
-                                )
-                              }
-                              disabled={
-                                updatingOrder === order.id
-                              }
-                              className="status-button pending-button"
-                            >
-                              PENDING
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                updateOrderStatus(
-                                  order.id,
-                                  "confirmed"
-                                )
-                              }
-                              disabled={
-                                updatingOrder === order.id
-                              }
-                              className="status-button confirmed-button"
-                            >
-                              CONFIRMED
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                updateOrderStatus(
-                                  order.id,
-                                  "failed"
-                                )
-                              }
-                              disabled={
-                                updatingOrder === order.id
-                              }
-                              className="status-button failed-button"
-                            >
-                              FAILED
-                            </button>
-
-                          </div>
-
-                        </div>
-                      )
-                    })}
+                        )
+                      }
+                    )}
 
                   </div>
                 )}
 
               </section>
 
-            </div>
+            </>
           )}
+
         </div>
 
-        {/* IMAGE VIEWER */}
         {previewImage && (
           <div
-            className="image-modal"
-            onClick={() => setPreviewImage("")}
+            className="modal"
+            onClick={() =>
+              setPreviewImage("")
+            }
           >
+
             <button
-              className="close-modal"
-              onClick={() => setPreviewImage("")}
+              onClick={() =>
+                setPreviewImage("")
+              }
+              className="close"
             >
               ×
             </button>
 
             <img
               src={previewImage}
-              alt="Full transaction screenshot"
-              onClick={(event) =>
-                event.stopPropagation()
+              alt="Transaction"
+              onClick={(e) =>
+                e.stopPropagation()
               }
             />
+
           </div>
         )}
 
@@ -1336,300 +1210,386 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #050505;
+  background: #020202;
 }
 
 body {
-  font-family:
-    Arial,
-    Helvetica,
-    sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 button,
 input,
 textarea {
-  font-family: inherit;
+  font: inherit;
 }
 
 button {
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
 .admin-page {
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  color: white;
   background:
     radial-gradient(
-      circle at 10% 5%,
-      rgba(230, 0, 0, .14),
+      circle at 10% 10%,
+      rgba(255,0,0,.12),
       transparent 28%
     ),
     radial-gradient(
-      circle at 90% 55%,
-      rgba(180, 0, 0, .08),
-      transparent 30%
+      circle at 90% 30%,
+      rgba(255,0,0,.08),
+      transparent 25%
     ),
-    #050505;
-  color: #fff;
-  position: relative;
-  overflow-x: hidden;
-  padding-bottom: 60px;
+    #020202;
 }
 
-.glow {
+.floating-orb {
   position: fixed;
-  width: 360px;
-  height: 360px;
+  width: 240px;
+  height: 240px;
   border-radius: 50%;
-  filter: blur(120px);
+  background: rgba(255,0,0,.16);
+  filter: blur(60px);
   pointer-events: none;
-  opacity: .25;
+  z-index: 0;
+  animation: float 9s ease-in-out infinite alternate;
 }
 
-.glow-one {
-  top: -180px;
-  left: -150px;
-  background: #d00000;
+.orb-one {
+  left: -120px;
+  top: 10%;
 }
 
-.glow-two {
-  right: -180px;
-  bottom: -150px;
-  background: #9d0000;
+.orb-two {
+  right: -120px;
+  top: 45%;
+  animation-delay: -3s;
+}
+
+.orb-three {
+  left: 35%;
+  bottom: -130px;
+  animation-delay: -6s;
+}
+
+@keyframes float {
+  from {
+    transform: translate(0,0) scale(.9);
+  }
+
+  to {
+    transform: translate(35px,-30px) scale(1.15);
+  }
 }
 
 .admin-header {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(5,5,5,.88);
-  border-bottom: 1px solid #222;
+  background: rgba(2,2,2,.9);
   backdrop-filter: blur(18px);
+  border-bottom: 1px solid #222;
 }
 
 .header-inner {
-  max-width: 1180px;
-  margin: auto;
+  max-width: 1200px;
   min-height: 76px;
-  padding: 12px 18px;
+  margin: auto;
+  padding: 10px 16px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 15px;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .brand-area {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
+  min-width: 0;
 }
 
 .header-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  object-fit: cover;
-  border: 1px solid rgba(255,0,0,.35);
+  width: 43px;
+  height: 43px;
+  border-radius: 12px;
+  object-fit: contain;
+  border: 1px solid #292929;
+  background: #080808;
 }
 
 .default-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg,#ff1a1a,#a40000);
-  font-weight: 900;
+  background: linear-gradient(
+    135deg,
+    #ff2020,
+    #970000
+  );
   font-size: 22px;
-  box-shadow: 0 0 25px rgba(220,0,0,.25);
+  font-weight: 950;
 }
 
 .brand-name {
-  font-weight: 900;
-  letter-spacing: 2px;
   font-size: 15px;
+  font-weight: 950;
+  letter-spacing: 2px;
 }
 
 .brand-small {
-  color: #666;
-  font-size: 11px;
   margin-top: 3px;
+  color: #666;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1px;
 }
+
+/* THESE BUTTONS ARE ALWAYS VISIBLE */
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  position: relative;
+  z-index: 5;
 }
 
-.header-link,
-.logout-button {
-  border-radius: 9px;
-  padding: 10px 13px;
-  font-size: 11px;
-  font-weight: 800;
+.nav-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 13px;
   text-decoration: none;
-  white-space: nowrap;
-}
-
-.header-link {
-  color: #bbb;
-  border: 1px solid #292929;
-  background: #0c0c0c;
-}
-
-.header-link:hover {
-  border-color: #555;
   color: #fff;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .6px;
+
+  border: 1px solid
+    rgba(255,40,40,.5);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,0,0,.2),
+      #090909
+    );
+
+  box-shadow:
+    0 0 16px
+      rgba(255,0,0,.14),
+    inset 0 0 15px
+      rgba(255,0,0,.04);
+
+  transition:
+    transform .2s ease,
+    border-color .2s ease,
+    box-shadow .2s ease;
+}
+
+.nav-button:hover,
+.nav-button:active {
+  transform: translateY(-2px);
+  border-color: #ff2525;
+  box-shadow:
+    0 0 25px
+      rgba(255,0,0,.4),
+    inset 0 0 18px
+      rgba(255,0,0,.1);
+}
+
+.nav-number {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+
+  color: white;
+
+  background:
+    linear-gradient(
+      135deg,
+      #ff2525,
+      #a50000
+    );
+
+  box-shadow:
+    0 0 13px
+      rgba(255,0,0,.4);
+
+  font-size: 8px;
 }
 
 .logout-button {
-  border: 0;
-  color: #fff;
-  background: linear-gradient(135deg,#ef1616,#b40000);
+  min-height: 42px;
+  padding: 7px 12px;
+  border-radius: 13px;
+  border: 1px solid #333;
+  background: #0c0c0c;
+  color: #aaa;
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.logout-button:hover {
+  color: white;
+  border-color: #777;
 }
 
 .dashboard {
-  max-width: 1180px;
+  max-width: 1200px;
   margin: auto;
-  padding: 35px 18px;
+  padding: 30px 16px 60px;
   position: relative;
   z-index: 2;
 }
 
-.dashboard-hero {
-  min-height: 150px;
+.hero {
+  min-height: 165px;
   padding: 28px;
-  border: 1px solid #252525;
-  border-radius: 25px;
+  margin-bottom: 20px;
+  border-radius: 24px;
+  border: 1px solid #292929;
+
   background:
     linear-gradient(
       135deg,
-      rgba(255,0,0,.10),
-      rgba(20,20,20,.85)
+      rgba(255,0,0,.12),
+      rgba(10,10,10,.95)
     );
+
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 22px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.35);
 }
 
 .eyebrow {
-  color: #ef3030;
-  font-size: 10px;
-  font-weight: 900;
+  color: #ff3030;
+  font-size: 9px;
+  font-weight: 950;
   letter-spacing: 2px;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
-.dashboard-hero h1 {
+.hero h1 {
   margin: 0;
   font-size: 38px;
-  letter-spacing: -1.5px;
+  letter-spacing: -1px;
 }
 
-.dashboard-hero p {
-  margin: 9px 0 0;
-  color: #888;
-  font-size: 14px;
+.hero p {
   max-width: 650px;
+  margin: 9px 0 0;
+  color: #777;
+  font-size: 13px;
   line-height: 1.5;
 }
 
-.live-indicator {
+.live {
   display: flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid #253525;
-  background: #071007;
-  color: #73d473;
-  border-radius: 30px;
   padding: 9px 13px;
-  font-size: 10px;
-  font-weight: 900;
+  border-radius: 30px;
+  border: 1px solid #254025;
+  background: #071007;
+  color: #64d879;
+  font-size: 9px;
+  font-weight: 950;
 }
 
-.live-indicator span {
+.live span {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #35db35;
-  box-shadow: 0 0 10px #35db35;
+  background: #38df52;
+  box-shadow: 0 0 10px #38df52;
 }
 
-.success-message,
-.error-message {
-  padding: 14px 16px;
-  border-radius: 13px;
-  margin-bottom: 18px;
-  font-size: 13px;
-  font-weight: 700;
+.success,
+.error {
+  padding: 13px 15px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-.success-message {
-  background: rgba(0,200,60,.08);
-  border: 1px solid rgba(0,220,80,.25);
-  color: #63dc80;
+.success {
+  color: #5ddd7c;
+  border: 1px solid rgba(0,220,70,.25);
+  background: rgba(0,220,70,.06);
 }
 
-.error-message {
-  background: rgba(220,0,0,.09);
-  border: 1px solid rgba(255,0,0,.25);
-  color: #ff6666;
-}
-
-.dashboard-content {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+.error {
+  color: #ff6464;
+  border: 1px solid rgba(255,0,0,.3);
+  background: rgba(255,0,0,.07);
 }
 
 .card {
-  background: rgba(12,12,12,.92);
+  margin-bottom: 20px;
+  padding: 24px;
+  border-radius: 22px;
   border: 1px solid #252525;
-  border-radius: 23px;
-  padding: 25px;
-  box-shadow: 0 20px 55px rgba(0,0,0,.30);
+  background: rgba(10,10,10,.95);
+  box-shadow: 0 20px 60px rgba(0,0,0,.28);
 }
 
-.card-heading {
-  margin-bottom: 23px;
+.section-head {
+  margin-bottom: 22px;
 }
 
+.section-head > span,
 .section-number {
-  color: #e30000;
-  font-size: 10px;
-  font-weight: 900;
+  color: #ed2424;
+  font-size: 9px;
+  font-weight: 950;
   letter-spacing: 2px;
-  margin-bottom: 5px;
 }
 
-.card h2 {
-  margin: 0;
+.section-head h2,
+.payments-header h2 {
+  margin: 5px 0 0;
   font-size: 21px;
 }
 
-.card-heading p,
-.payment-heading p {
-  color: #666;
-  font-size: 13px;
+.section-head p,
+.payments-header p {
   margin: 7px 0 0;
+  color: #707070;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .logo-editor {
   display: flex;
-  gap: 25px;
   align-items: center;
+  gap: 25px;
 }
 
 .logo-preview {
   width: 130px;
   height: 130px;
   flex-shrink: 0;
-  border-radius: 22px;
-  background: #050505;
+  border-radius: 20px;
   border: 1px solid #303030;
+  background: #050505;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1644,215 +1604,171 @@ button {
 
 .logo-preview span {
   font-size: 50px;
-  font-weight: 900;
-  color: #ef2020;
+  font-weight: 950;
+  color: #f02020;
 }
 
-.editor-actions {
+.logo-controls {
   flex: 1;
 }
 
-.field-label {
+.logo-controls label,
+.form label {
   display: block;
-  color: #ddd;
-  font-size: 12px;
-  font-weight: 800;
   margin-bottom: 8px;
-}
-
-.file-input {
-  width: 100%;
-  padding: 11px;
-  background: #070707;
-  border: 1px solid #292929;
-  color: #aaa;
-  border-radius: 11px;
-  font-size: 12px;
-}
-
-.file-input::file-selector-button {
-  border: 0;
-  background: #df0000;
-  color: #fff;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-weight: 800;
-  margin-right: 10px;
-}
-
-.button-row {
-  display: flex;
-  gap: 9px;
-  margin-top: 11px;
-}
-
-.red-button,
-.dark-button {
-  border-radius: 10px;
-  padding: 12px 17px;
+  color: #c9c9c9;
   font-size: 11px;
-  font-weight: 900;
-  border: 0;
+  font-weight: 850;
 }
 
-.red-button {
-  color: #fff;
-  background: linear-gradient(135deg,#ef1616,#b60000);
-  box-shadow: 0 7px 20px rgba(220,0,0,.17);
-}
-
-.red-button:hover {
-  background: #ff2020;
-}
-
-.dark-button {
-  color: #bbb;
-  background: #111;
-  border: 1px solid #303030;
-}
-
-.dark-button:hover {
-  color: #fff;
-  border-color: #555;
-}
-
-.full {
+input[type="file"] {
   width: 100%;
+  padding: 10px;
+  color: #888;
+  background: #060606;
+  border: 1px solid #292929;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+input[type="file"]::file-selector-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-right: 8px;
+  color: white;
+  background: #d80000;
+  font-weight: 850;
+}
+
+.save-button,
+.save-payment {
   margin-top: 10px;
+  width: 100%;
+  padding: 13px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  background: linear-gradient(
+    135deg,
+    #f02020,
+    #a90000
+  );
+  font-size: 10px;
+  font-weight: 950;
+  box-shadow:
+    0 8px 22px
+      rgba(220,0,0,.18);
 }
 
 .coin-grid {
   display: grid;
-  grid-template-columns: repeat(4,1fr);
+  grid-template-columns:
+    repeat(4,1fr);
   gap: 10px;
 }
 
-.coin-card {
-  position: relative;
+.coin {
   min-height: 105px;
-  padding: 17px;
+  position: relative;
+  padding: 15px;
   text-align: left;
   border-radius: 15px;
-  background: #070707;
   border: 1px solid #252525;
-  color: #fff;
-  transition: .2s;
+  background: #070707;
+  color: white;
 }
 
-.coin-card:hover {
-  border-color: #555;
-  transform: translateY(-2px);
-}
-
-.coin-selected {
-  border-color: #e00000;
+.coin.selected {
+  border-color: #ef1b1b;
   background:
     linear-gradient(
       145deg,
-      rgba(230,0,0,.13),
-      #090909
+      rgba(255,0,0,.13),
+      #080808
     );
-  box-shadow: 0 0 25px rgba(220,0,0,.10);
+  box-shadow:
+    0 0 25px
+      rgba(255,0,0,.1);
 }
 
-.coin-symbol {
-  font-size: 25px;
-  font-weight: 900;
+.coin strong {
+  display: block;
   color: #777;
+  font-size: 25px;
 }
 
-.coin-selected .coin-symbol {
-  color: #ff2222;
+.coin.selected strong {
+  color: #ff2424;
 }
 
-.coin-name {
-  margin-top: 9px;
-  font-size: 13px;
-  font-weight: 800;
+.coin span {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 850;
 }
 
-.selected-label {
+.coin small {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  color: #ff5555;
-  font-size: 7px;
-  font-weight: 900;
+  top: 9px;
+  right: 9px;
+  color: #ff5050;
+  font-size: 6px;
+  font-weight: 950;
 }
 
-.settings-form {
-  margin-top: 25px;
+.form {
+  margin-top: 22px;
   display: flex;
   flex-direction: column;
   gap: 17px;
 }
 
-.form-group label {
-  display: block;
-  color: #ccc;
-  font-size: 12px;
-  font-weight: 800;
-  margin-bottom: 7px;
-}
-
-.form-group input,
-.form-group textarea {
+.form input,
+.form textarea {
   width: 100%;
-  color: #fff;
-  background: #060606;
-  border: 1px solid #292929;
-  border-radius: 11px;
-  padding: 13px 14px;
+  padding: 13px;
+  border-radius: 10px;
   outline: none;
-  font-size: 13px;
-  transition: .2s;
+  color: white;
+  background: #050505;
+  border: 1px solid #292929;
+  font-size: 12px;
 }
 
-.form-group textarea {
+.form input:focus,
+.form textarea:focus {
+  border-color: #e00000;
+  box-shadow:
+    0 0 0 3px
+      rgba(220,0,0,.08);
+}
+
+.form textarea {
   resize: vertical;
   line-height: 1.5;
 }
 
-.form-group input:focus,
-.form-group textarea:focus {
-  border-color: #e00000;
-  box-shadow: 0 0 0 3px rgba(220,0,0,.08);
-}
-
-.qr-box {
-  padding: 18px;
-  border: 1px solid #242424;
-  border-radius: 17px;
+.qr-section {
+  padding: 17px;
+  border-radius: 16px;
+  border: 1px solid #252525;
   background: #060606;
 }
 
-.qr-heading h3 {
-  margin: 0;
-  font-size: 15px;
-}
-
-.qr-heading p {
-  margin: 5px 0 15px;
-  color: #666;
-  font-size: 11px;
-}
-
-.qr-content {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 15px;
+.qr-section h3 {
+  margin: 0 0 13px;
+  font-size: 14px;
 }
 
 .qr-preview {
   width: 180px;
   height: 180px;
   padding: 8px;
-  background: #fff;
+  margin-bottom: 15px;
   border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: white;
 }
 
 .qr-preview img {
@@ -1861,346 +1777,236 @@ button {
   object-fit: contain;
 }
 
-.remove-button {
-  border: 1px solid rgba(255,0,0,.35);
-  background: rgba(220,0,0,.06);
-  color: #ff5555;
-  border-radius: 10px;
-  padding: 11px 14px;
-  font-size: 11px;
-  font-weight: 900;
-}
-
 .no-qr {
-  border: 1px dashed #333;
-  border-radius: 11px;
-  padding: 30px;
-  text-align: center;
+  padding: 20px 0;
   color: #555;
-  font-size: 12px;
-  margin-bottom: 13px;
+  font-size: 11px;
 }
 
-.save-payment-button {
-  width: 100%;
-  border: 0;
-  border-radius: 12px;
+.save-payment {
   padding: 15px;
-  background: linear-gradient(135deg,#f01717,#b00000);
-  color: #fff;
-  font-weight: 900;
-  font-size: 12px;
-  box-shadow: 0 9px 25px rgba(220,0,0,.18);
+  font-size: 11px;
 }
 
-.save-payment-button:hover {
-  background: #ff1b1b;
-}
-
-.save-payment-button:disabled,
-.red-button:disabled,
-.dark-button:disabled,
-.refresh-button:disabled,
-.status-button:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.payment-heading {
+.payments-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 15px;
   margin-bottom: 20px;
 }
 
-.refresh-button {
-  border: 1px solid #333;
-  background: #0b0b0b;
-  color: #ccc;
+.refresh {
+  padding: 11px 15px;
   border-radius: 10px;
-  padding: 11px 14px;
-  font-size: 10px;
-  font-weight: 900;
+  border: 1px solid #333;
+  background: #111;
+  color: white;
+  font-size: 9px;
+  font-weight: 950;
 }
 
-.refresh-button:hover {
-  border-color: #666;
-  color: #fff;
-}
-
-.empty-payments {
+.empty {
+  padding: 50px 20px;
   text-align: center;
-  padding: 55px 20px;
   border: 1px dashed #292929;
-  border-radius: 17px;
-  background: #070707;
+  border-radius: 15px;
 }
 
-.empty-icon {
-  font-size: 30px;
-  color: #555;
+.empty strong {
+  font-size: 14px;
 }
 
-.empty-payments h3 {
-  margin: 12px 0 5px;
-  font-size: 15px;
-}
-
-.empty-payments p {
-  margin: 0;
+.empty p {
   color: #666;
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.orders-list {
+.orders {
   display: flex;
   flex-direction: column;
-  gap: 13px;
+  gap: 12px;
 }
 
-.order-card {
+.order {
+  padding: 17px;
+  border-radius: 16px;
   border: 1px solid #252525;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #050505;
-}
-
-.order-top {
-  padding: 18px;
+  background: #070707;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
   gap: 20px;
 }
 
-.order-title-row {
+.order-info small {
+  color: #e52b2b;
+  font-size: 8px;
+  font-weight: 950;
+}
+
+.order-info h3 {
+  margin: 7px 0 12px;
+  font-size: 15px;
+}
+
+.order-info p {
+  margin: 5px 0;
+  color: #888;
+  font-size: 10px;
+}
+
+.order-actions {
+  min-width: 260px;
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 9px;
 }
 
-.order-title-row h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
 .status {
-  padding: 5px 9px;
+  padding: 7px 10px;
   border-radius: 20px;
   font-size: 8px;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-weight: 950;
 }
 
-.status-confirmed {
-  background: rgba(0,220,80,.09);
-  color: #50d878;
+.status.confirmed {
+  color: #52db78;
+  background: rgba(0,220,70,.08);
 }
 
-.status-failed {
-  background: rgba(230,0,0,.10);
-  color: #ff5252;
-}
-
-.status-pending {
-  background: rgba(230,180,0,.10);
-  color: #e4bf4e;
-}
-
-.order-details {
-  margin-top: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  font-size: 12px;
-  color: #ddd;
-}
-
-.order-details div span {
-  display: inline-block;
-  width: 85px;
-  color: #555;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .5px;
-}
-
-.order-details .date {
-  color: #555;
-  font-size: 10px;
-  margin-top: 3px;
-}
-
-.break {
-  word-break: break-all;
-}
-
-.transaction-image-button {
-  width: 145px;
-  height: 145px;
-  flex-shrink: 0;
-  padding: 0;
-  position: relative;
-  border: 1px solid #333;
-  border-radius: 14px;
-  overflow: hidden;
-  background: #111;
-}
-
-.transaction-image-button img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.transaction-image-button span {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  bottom: 7px;
-  padding: 7px;
-  border-radius: 7px;
-  background: rgba(0,0,0,.8);
-  color: #fff;
-  font-size: 8px;
-  font-weight: 900;
-}
-
-.status-controls {
-  display: grid;
-  grid-template-columns: repeat(3,1fr);
-  gap: 7px;
-  padding: 0 18px 18px;
-}
-
-.status-button {
-  padding: 12px 8px;
-  border-radius: 10px;
-  background: transparent;
-  font-size: 9px;
-  font-weight: 900;
-}
-
-.pending-button {
-  color: #e5c247;
-  border: 1px solid rgba(220,190,40,.3);
-  background: rgba(220,190,40,.04);
-}
-
-.confirmed-button {
-  color: #45d575;
-  border: 1px solid rgba(0,220,70,.3);
-  background: rgba(0,220,70,.04);
-}
-
-.failed-button {
+.status.failed {
   color: #ff5050;
-  border: 1px solid rgba(230,0,0,.3);
-  background: rgba(230,0,0,.04);
+  background: rgba(255,0,0,.08);
 }
 
-.pending-button:hover {
-  background: rgba(220,190,40,.12);
+.status.pending {
+  color: #e4bd45;
+  background: rgba(220,180,0,.08);
 }
 
-.confirmed-button:hover {
-  background: rgba(0,220,70,.12);
+.view-image {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #111;
+  color: white;
+  font-size: 8px;
+  font-weight: 900;
 }
 
-.failed-button:hover {
-  background: rgba(230,0,0,.12);
+.status-buttons {
+  width: 100%;
+  display: grid;
+  grid-template-columns:
+    repeat(3,1fr);
+  gap: 5px;
 }
 
-.image-modal {
+.status-buttons button {
+  padding: 9px 4px;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 7px;
+  font-weight: 950;
+}
+
+.pending {
+  color: #e4bd45;
+  border: 1px solid rgba(220,180,0,.3);
+}
+
+.confirmed {
+  color: #4fd879;
+  border: 1px solid rgba(0,220,70,.3);
+}
+
+.failed {
+  color: #ff5050;
+  border: 1px solid rgba(255,0,0,.3);
+}
+
+.modal {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0,0,0,.94);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 25px;
+  padding: 20px;
+  background: rgba(0,0,0,.94);
 }
 
-.image-modal img {
+.modal img {
   max-width: 95vw;
   max-height: 90vh;
   object-fit: contain;
   border-radius: 12px;
 }
 
-.close-modal {
+.close {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: 18px;
+  right: 18px;
   width: 45px;
   height: 45px;
   border-radius: 50%;
   border: 1px solid #444;
   background: #111;
-  color: #fff;
-  font-size: 30px;
-  line-height: 1;
+  color: white;
+  font-size: 28px;
 }
 
-.loading-page {
+.center-page {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
 }
 
-.loading-box,
-.login-required {
-  width: min(430px, calc(100% - 30px));
+.loading-box {
+  width: min(430px,100%);
   padding: 35px 25px;
   text-align: center;
-  border-radius: 24px;
-  background: #0d0d0d;
-  border: 1px solid #282828;
-  box-shadow: 0 25px 70px rgba(0,0,0,.55);
-}
-
-.loading-box h1 {
-  margin: 10px 0;
-  letter-spacing: 3px;
-}
-
-.loading-box p,
-.login-required p {
-  color: #777;
-  font-size: 13px;
-  line-height: 1.5;
+  border-radius: 23px;
+  border: 1px solid #292929;
+  background: #0b0b0b;
 }
 
 .big-logo {
   width: 65px;
   height: 65px;
   margin: auto;
-  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg,#ff1717,#a50000);
-  color: #fff;
+  border-radius: 20px;
+  background: linear-gradient(
+    135deg,
+    #ff2020,
+    #920000
+  );
   font-size: 28px;
-  font-weight: 900;
-  box-shadow: 0 0 30px rgba(220,0,0,.35);
+  font-weight: 950;
 }
 
-.login-required h1 {
-  margin: 20px 0 7px;
-  font-size: 23px;
+.loading-box h1 {
+  margin: 15px 0 7px;
+}
+
+.loading-box p {
+  color: #777;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .spinner {
   width: 25px;
   height: 25px;
-  margin: 18px auto;
+  margin: 17px auto;
   border-radius: 50%;
   border: 3px solid #333;
-  border-top-color: #e00000;
+  border-top-color: #ed0000;
   animation: spin .7s linear infinite;
 }
 
@@ -2210,36 +2016,90 @@ button {
   }
 }
 
+.red-button {
+  padding: 13px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  background: #df0000;
+  font-weight: 950;
+}
+
+.full {
+  width: 100%;
+}
+
+/* PHONE */
+
 @media (max-width: 760px) {
 
-  .header-link {
+  .header-inner {
+    padding: 8px;
+    min-height: 68px;
+  }
+
+  /*
+    IMPORTANT:
+    PAGE 1 AND PAGE 2 ARE NOT HIDDEN.
+  */
+
+  .header-actions {
+    display: flex;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .nav-button,
+  .logout-button {
+    min-height: 37px;
+    padding: 6px 7px;
+    font-size: 7px;
+  }
+
+  .nav-number {
+    width: 21px;
+    height: 21px;
+    border-radius: 6px;
+    font-size: 6px;
+  }
+
+  .brand-name {
+    font-size: 10px;
+  }
+
+  .brand-small {
     display: none;
   }
 
+  .header-logo {
+    width: 34px;
+    height: 34px;
+  }
+
   .dashboard {
-    padding: 22px 13px;
+    padding: 20px 10px 45px;
   }
 
-  .dashboard-hero {
-    padding: 22px;
-    align-items: flex-start;
+  .hero {
+    padding: 21px;
+    min-height: 140px;
   }
 
-  .dashboard-hero h1 {
-    font-size: 30px;
+  .hero h1 {
+    font-size: 29px;
   }
 
-  .live-indicator {
+  .hero p {
+    font-size: 11px;
+  }
+
+  .live {
     display: none;
   }
 
   .card {
-    padding: 18px;
-    border-radius: 19px;
-  }
-
-  .coin-grid {
-    grid-template-columns: repeat(2,1fr);
+    padding: 17px;
+    border-radius: 18px;
   }
 
   .logo-editor {
@@ -2251,60 +2111,27 @@ button {
     margin: auto;
   }
 
-  .qr-content {
-    flex-direction: column;
-    align-items: flex-start;
+  .coin-grid {
+    grid-template-columns:
+      repeat(2,1fr);
   }
 
-  .payment-heading {
+  .order {
     flex-direction: column;
   }
 
-  .refresh-button {
+  .order-actions {
     width: 100%;
+    min-width: 0;
+    align-items: stretch;
   }
 
-  .order-top {
+  .payments-header {
     flex-direction: column;
+    align-items: stretch;
   }
 
-  .transaction-image-button {
-    width: 100%;
-    height: 220px;
-  }
-}
-
-@media (max-width: 480px) {
-
-  .header-inner {
-    padding: 11px 13px;
-  }
-
-  .logout-button {
-    padding: 9px 11px;
-  }
-
-  .dashboard-hero {
-    border-radius: 19px;
-  }
-
-  .dashboard-hero h1 {
-    font-size: 27px;
-  }
-
-  .card h2 {
-    font-size: 19px;
-  }
-
-  .status-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .button-row {
-    flex-direction: column;
-  }
-
-  .button-row button {
+  .refresh {
     width: 100%;
   }
 
@@ -2313,8 +2140,52 @@ button {
     height: 160px;
   }
 
-  .order-details div span {
-    width: 75px;
+}
+
+/* VERY SMALL PHONES */
+
+@media (max-width: 430px) {
+
+  .brand-area {
+    gap: 5px;
   }
+
+  .brand-name {
+    display: none;
+  }
+
+  .header-actions {
+    gap: 4px;
+  }
+
+  .nav-button,
+  .logout-button {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    padding: 5px 3px;
+  }
+
+  .nav-button span:last-child {
+    display: inline;
+  }
+
+  .dashboard {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .hero h1 {
+    font-size: 26px;
+  }
+
+  .coin {
+    min-height: 95px;
+  }
+
+  .status-buttons {
+    grid-template-columns: 1fr;
+  }
+
 }
 `
