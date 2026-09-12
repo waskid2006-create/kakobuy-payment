@@ -1355,14 +1355,20 @@ function formatTime(seconds: number) {
           </a>
 
           <div className="top-actions">
-            <a
-              href={
-                CHECK_ORDER_URL
-              }
-              className="order-link"
-            >
-              MY ORDER
-            </a>
+  <a
+    href={
+      orderId && email
+        ? `${CHECK_ORDER_URL}my-order?orderId=${encodeURIComponent(
+            orderId,
+          )}&email=${encodeURIComponent(
+            email,
+          )}`
+        : CHECK_ORDER_URL
+    }
+    className="order-link"
+  >
+    MY ORDER
+  </a>
 
             <button
               className="status-button"
