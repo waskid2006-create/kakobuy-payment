@@ -11,7 +11,7 @@ type PaymentMethod = {
 }
 
 type Order = {
-  id: number | strin
+  id: number | string
   product_name?: string
   full_name?: string
   email?: string
