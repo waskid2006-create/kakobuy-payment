@@ -685,18 +685,32 @@ async function saveLogo() {
   href="https://kakobuy-mini.vercel.app/admin"
   target="_blank"
   rel="noreferrer"
-  className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+  className="group relative overflow-hidden rounded-xl border border-red-500/40 bg-gradient-to-r from-red-950/60 to-black px-4 py-2.5 text-xs font-bold tracking-wide text-white shadow-[0_0_18px_rgba(239,68,68,0.12)] transition-all duration-300 hover:border-red-500 hover:shadow-[0_0_25px_rgba(239,68,68,0.35)]"
 >
-  PAGE 1
+  <span className="relative z-10 flex items-center gap-2">
+    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-600/20 text-red-400">
+      1
+    </span>
+    PAGE 1
+  </span>
+
+  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-red-500/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
 </a>
 
 <a
   href="https://kakobuy-check-order.vercel.app/admin"
   target="_blank"
   rel="noreferrer"
-  className="hidden rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-zinc-900 sm:block"
+  className="group relative overflow-hidden rounded-xl border border-red-500/40 bg-gradient-to-r from-red-950/60 to-black px-4 py-2.5 text-xs font-bold tracking-wide text-white shadow-[0_0_18px_rgba(239,68,68,0.12)] transition-all duration-300 hover:border-red-500 hover:shadow-[0_0_25px_rgba(239,68,68,0.35)]"
 >
-  PAGE 2
+  <span className="relative z-10 flex items-center gap-2">
+    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-600/20 text-red-400">
+      2
+    </span>
+    PAGE 2
+  </span>
+
+  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-red-500/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
 </a>
 
               <button
