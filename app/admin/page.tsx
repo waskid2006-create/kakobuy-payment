@@ -479,9 +479,9 @@ export default function AdminPage() {
               "application/json",
           },
           body: JSON.stringify({
-            id: orderId,
-            status,
-          }),
+  orderId: orderId,
+  status,
+}),
         }
       )
 
