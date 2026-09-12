@@ -259,13 +259,16 @@ export async function PUT(request: Request) {
 
     const body = await request.json()
 
-    const orderId = String(body?.orderId || "").trim()
+    const orderId = String(
+  body?.orderId ||
+  body?.id ||
+  ""
+).trim()
 
-    const status = String(
-      body?.status || ""
-    )
-      .trim()
-      .toLowerCase()
+const status = String(
+  body?.status ||
+  ""
+).trim().toLowerCase()
 
     if (!orderId) {
       return Response.json(
