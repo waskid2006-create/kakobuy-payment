@@ -476,38 +476,35 @@ export default function PaymentPage() {
    */
 
   useEffect(() => {
-    if (!paymentVisible) return
+  if (!paymentVisible) return
 
-    if (timeLeft <= 0) {
-      window.location.href =
-        CHECK_ORDER_URL
+  const timer = setInterval(() => {
+    setTimeLeft((current) => {
+      if (current <= 1) {
+        clearInterval(timer)
 
-      return
-    }
+        window.location.href =
+          CHECK_ORDER_URL
 
-    const timer = setInterval(() => {
-      setTimeLeft((current) => {
-        if (current <= 1) {
-          clearInterval(timer)
-          return 0
-        }
+        return 0
+      }
 
-        return current - 1
-      })
-    }, 1000)
+      return current - 1
+    })
+  }, 1000)
 
-    return () => clearInterval(timer)
-  }, [paymentVisible, timeLeft])
+  return () => clearInterval(timer)
+}, [paymentVisible])
 
-  function formatTime(seconds: number) {
-    const minutes = Math.floor(seconds / 60)
-    const secs = seconds % 60
+function formatTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const secs = seconds % 60
 
-    return `${String(minutes).padStart(
-      2,
-      "0"
-    )}:${String(secs).padStart(2, "0")}`
-  }
+  return `${String(minutes).padStart(
+    2,
+    "0"
+  )}:${String(secs).padStart(2, "0")}`
+}
 
   /*
    * --------------------------------------------------
