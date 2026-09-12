@@ -1,10 +1,23 @@
 import { cookies } from "next/headers"
+import { put } from "@vercel/blob"
 import { sql } from "@/app/db"
+
+// ============================================================
+// ADMIN CHECK
+// ============================================================
+
+async function isAdmin() {
+  const cookieStore = await cookies()
+
+  return (
+    cookieStore.get("kakobuy_admin")?.value ===
+    "authenticated"
+  )
+}
 
 // ============================================================
 // GET — PUBLIC
 // Buyers need to read payment methods.
-// DO NOT require admin login here.
 // ============================================================
 
 export async function GET(request: Request) {
@@ -28,10 +41,7 @@ export async function GET(request: Request) {
         name,
         information,
         wallet_address,
-        qr_image_url,
-        hero_heading,
-        hero_subtitle,
-        footer_text
+        qr_image
       FROM payment_methods
       WHERE id = ${id}
       LIMIT 1
@@ -55,21 +65,31 @@ export async function GET(request: Request) {
       paymentMethod: {
         id: row.id,
         name: row.name,
-        information: row.information || "",
-        wallet_address: row.wallet_address || "",
-        qr_image_url: row.qr_image_url || "",
-        hero_heading: row.hero_heading || "",
-        hero_subtitle: row.hero_subtitle || "",
-        footer_text: row.footer_text || "",
+
+        information:
+          row.information || "",
+
+        wallet_address:
+          row.wallet_address || "",
+
+        // Keep the frontend name qr_image_url
+        qr_image_url:
+          row.qr_image || "",
       },
     })
   } catch (error) {
-    console.error("Payment method GET error:", error)
+    console.error(
+      "Payment method GET error:",
+      error
+    )
 
     return Response.json(
       {
         success: false,
-        error: "Unable to load payment method",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to load payment method",
       },
       { status: 500 }
     )
@@ -78,17 +98,12 @@ export async function GET(request: Request) {
 
 // ============================================================
 // PUT — ADMIN ONLY
-// Only the logged-in admin can change payment settings.
+// Saves wallet address, payment information and QR image.
 // ============================================================
 
 export async function PUT(request: Request) {
   try {
-    const cookieStore = await cookies()
-
-    const adminCookie =
-      cookieStore.get("kakobuy_admin")?.value
-
-    if (adminCookie !== "authenticated") {
+    if (!(await isAdmin())) {
       return Response.json(
         {
           success: false,
@@ -105,29 +120,26 @@ export async function PUT(request: Request) {
     // MULTIPART FORM DATA
     // ========================================================
 
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData()
+    if (
+      contentType.includes(
+        "multipart/form-data"
+      )
+    ) {
+      const formData =
+        await request.formData()
 
       const id =
         formData.get("id")?.toString() || ""
 
       const information =
-        formData.get("information")?.toString() || ""
+        formData
+          .get("information")
+          ?.toString() || ""
 
       const walletAddress =
-        formData.get("wallet_address")?.toString() || ""
-
-      const heroHeading =
-        formData.get("hero_heading")?.toString() ||
-        "PAY WITH CRYPTO"
-
-      const heroSubtitle =
-        formData.get("hero_subtitle")?.toString() ||
-        "Secure and simple crypto payment"
-
-      const footerText =
-        formData.get("footer_text")?.toString() ||
-        "KAKOBUY"
+        formData
+          .get("wallet_address")
+          ?.toString() || ""
 
       const qr =
         formData.get("qr") ||
@@ -145,7 +157,14 @@ export async function PUT(request: Request) {
 
       let qrImageUrl: string | null = null
 
-      if (qr instanceof File && qr.size > 0) {
+      // ------------------------------------------------------
+      // QR UPLOAD
+      // ------------------------------------------------------
+
+      if (
+        qr instanceof File &&
+        qr.size > 0
+      ) {
         const allowedTypes = [
           "image/jpeg",
           "image/png",
@@ -163,7 +182,10 @@ export async function PUT(request: Request) {
           )
         }
 
-        if (qr.size > 5 * 1024 * 1024) {
+        if (
+          qr.size >
+          5 * 1024 * 1024
+        ) {
           return Response.json(
             {
               success: false,
@@ -174,52 +196,91 @@ export async function PUT(request: Request) {
           )
         }
 
-        const buffer = Buffer.from(
-          await qr.arrayBuffer()
+        const extension =
+          qr.type === "image/png"
+            ? "png"
+            : qr.type === "image/webp"
+              ? "webp"
+              : "jpg"
+
+        const blob = await put(
+          `kakobuy/qr/${id}-${Date.now()}.${extension}`,
+          qr,
+          {
+            access: "public",
+            addRandomSuffix: true,
+
+            ...(process.env.BLOB_STORE_ID
+              ? {
+                  storeId:
+                    process.env.BLOB_STORE_ID,
+                }
+              : {}),
+          }
         )
 
-        qrImageUrl =
-          `data:${qr.type};base64,` +
-          buffer.toString("base64")
+        qrImageUrl = blob.url
       }
+
+      // ------------------------------------------------------
+      // SAVE WITH QR
+      // ------------------------------------------------------
 
       if (qrImageUrl) {
         await sql`
           UPDATE payment_methods
           SET
-            information = ${information},
-            wallet_address = ${walletAddress},
-            qr_image_url = ${qrImageUrl},
-            hero_heading = ${heroHeading},
-            hero_subtitle = ${heroSubtitle},
-            footer_text = ${footerText}
+            information =
+              ${information},
+
+            wallet_address =
+              ${walletAddress},
+
+            qr_image =
+              ${qrImageUrl},
+
+            updated_at =
+              NOW()
+
           WHERE id = ${id}
         `
       } else {
+        // ----------------------------------------------------
+        // SAVE WITHOUT CHANGING EXISTING QR
+        // ----------------------------------------------------
+
         await sql`
           UPDATE payment_methods
           SET
-            information = ${information},
-            wallet_address = ${walletAddress},
-            hero_heading = ${heroHeading},
-            hero_subtitle = ${heroSubtitle},
-            footer_text = ${footerText}
+            information =
+              ${information},
+
+            wallet_address =
+              ${walletAddress},
+
+            updated_at =
+              NOW()
+
           WHERE id = ${id}
         `
       }
 
       return Response.json({
         success: true,
+        message:
+          "Payment method saved successfully.",
       })
     }
 
     // ========================================================
     // JSON
+    // Used when there is no QR upload.
     // ========================================================
 
     const body = await request.json()
 
-    const id = body?.id
+    const id =
+      body?.id
 
     const information =
       body?.information || ""
@@ -227,26 +288,17 @@ export async function PUT(request: Request) {
     const walletAddress =
       body?.wallet_address || ""
 
-    const heroHeading =
-      body?.hero_heading ||
-      "PAY WITH CRYPTO"
-
-    const heroSubtitle =
-      body?.hero_subtitle ||
-      "Secure and simple crypto payment"
-
-    const footerText =
-      body?.footer_text ||
-      "KAKOBUY"
-
     const qrImageUrl =
-      body?.qr_image_url || ""
+      body?.qr_image_url ||
+      body?.qr_image ||
+      ""
 
     if (!id) {
       return Response.json(
         {
           success: false,
-          error: "Missing payment method",
+          error:
+            "Missing payment method",
         },
         { status: 400 }
       )
@@ -255,17 +307,25 @@ export async function PUT(request: Request) {
     await sql`
       UPDATE payment_methods
       SET
-        information = ${information},
-        wallet_address = ${walletAddress},
-        qr_image_url = ${qrImageUrl},
-        hero_heading = ${heroHeading},
-        hero_subtitle = ${heroSubtitle},
-        footer_text = ${footerText}
+        information =
+          ${information},
+
+        wallet_address =
+          ${walletAddress},
+
+        qr_image =
+          ${qrImageUrl},
+
+        updated_at =
+          NOW()
+
       WHERE id = ${id}
     `
 
     return Response.json({
       success: true,
+      message:
+        "Payment method saved successfully.",
     })
   } catch (error) {
     console.error(
